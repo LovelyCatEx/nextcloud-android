@@ -1,23 +1,13 @@
 /*
- *   ownCloud Android client application
+ * Nextcloud - Android Client
  *
- *   @author David A. Velasco
- *   Copyright (C) 2016 ownCloud Inc.
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License version 2,
- *   as published by the Free Software Foundation.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
+ * SPDX-FileCopyrightText: 2020 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-FileCopyrightText: 2018-2023 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2018 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-FileCopyrightText: 2016 ownCloud Inc.
+ * SPDX-FileCopyrightText: 2012-2013 David A. Velasco <dvelasco@solidgear.es>
+ * SPDX-License-Identifier: GPL-2.0-only AND (AGPL-3.0-or-later OR GPL-2.0-only)
  */
-
 package com.owncloud.android.operations;
 
 import android.content.Context;
@@ -25,10 +15,11 @@ import android.content.Intent;
 import android.text.TextUtils;
 
 import com.nextcloud.client.account.User;
-import com.owncloud.android.datamodel.DecryptedFolderMetadata;
+import com.nextcloud.client.jobs.download.FileDownloadHelper;
 import com.owncloud.android.datamodel.FileDataStorageManager;
 import com.owncloud.android.datamodel.OCFile;
-import com.owncloud.android.files.services.FileDownloader;
+import com.owncloud.android.datamodel.e2e.v1.decrypted.DecryptedFolderMetadataFileV1;
+import com.owncloud.android.datamodel.e2e.v2.decrypted.DecryptedFolderMetadataFile;
 import com.owncloud.android.lib.common.OwnCloudClient;
 import com.owncloud.android.lib.common.operations.OperationCancelledException;
 import com.owncloud.android.lib.common.operations.RemoteOperationResult;
@@ -37,6 +28,7 @@ import com.owncloud.android.lib.common.utils.Log_OC;
 import com.owncloud.android.lib.resources.files.ReadFileRemoteOperation;
 import com.owncloud.android.lib.resources.files.ReadFolderRemoteOperation;
 import com.owncloud.android.lib.resources.files.model.RemoteFile;
+import com.owncloud.android.lib.resources.status.E2EVersion;
 import com.owncloud.android.operations.common.SyncOperation;
 import com.owncloud.android.services.OperationsService;
 import com.owncloud.android.utils.FileStorageUtils;
@@ -49,23 +41,19 @@ import java.util.Map;
 import java.util.Vector;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  *  Remote operation performing the synchronization of the list of files contained
  *  in a folder identified with its remote path.
- *
  *  Fetches the list and properties of the files contained in the given folder, including their
  *  properties, and updates the local database with them.
- *
  *  Does NOT enter in the child folders to synchronize their contents also, BUT requests for a new operation instance
  *  doing so.
  */
 public class SynchronizeFolderOperation extends SyncOperation {
 
     private static final String TAG = SynchronizeFolderOperation.class.getSimpleName();
-
-    /** Time stamp for the synchronization process in progress */
-    private long mCurrentSyncTime;
 
     /** Remote path of the folder to synchronize */
     private String mRemotePath;
@@ -98,29 +86,30 @@ public class SynchronizeFolderOperation extends SyncOperation {
 
     private final AtomicBoolean mCancellationRequested;
 
+    private final boolean syncInBackgroundWorker;
+
     /**
      * Creates a new instance of {@link SynchronizeFolderOperation}.
      *
      * @param context         Application context.
      * @param remotePath      Path to synchronize.
      * @param user            Nextcloud account where the folder is located.
-     * @param currentSyncTime Time stamp for the synchronization process in progress.
      */
     public SynchronizeFolderOperation(Context context,
                                       String remotePath,
                                       User user,
-                                      long currentSyncTime,
-                                      FileDataStorageManager storageManager) {
+                                      FileDataStorageManager storageManager,
+                                      boolean syncInBackgroundWorker) {
         super(storageManager);
 
         mRemotePath = remotePath;
-        mCurrentSyncTime = currentSyncTime;
         this.user = user;
         mContext = context;
         mRemoteFolderChanged = false;
         mFilesForDirectDownload = new Vector<>();
         mFilesToSyncContents = new Vector<>();
         mCancellationRequested = new AtomicBoolean(false);
+        this.syncInBackgroundWorker = syncInBackgroundWorker;
     }
 
 
@@ -144,13 +133,12 @@ public class SynchronizeFolderOperation extends SyncOperation {
             if (result.isSuccess()) {
                 if (mRemoteFolderChanged) {
                     result = fetchAndSyncRemoteFolder(client);
-
                 } else {
                     prepareOpsFromLocalKnowledge();
                 }
 
                 if (result.isSuccess()) {
-                    syncContents();
+                    syncContents(client);
                 }
             }
 
@@ -215,6 +203,7 @@ public class SynchronizeFolderOperation extends SyncOperation {
         ReadFolderRemoteOperation operation = new ReadFolderRemoteOperation(mRemotePath);
         RemoteOperationResult result = operation.execute(client);
         Log_OC.d(TAG, "Synchronizing " + user.getAccountName() + mRemotePath);
+        Log_OC.d(TAG, "Synchronizing remote id" + mLocalFolder.getRemoteId());
 
         if (result.isSuccess()) {
             synchronizeData(result.getData());
@@ -281,16 +270,28 @@ public class SynchronizeFolderOperation extends SyncOperation {
         // update richWorkspace
         mLocalFolder.setRichWorkspace(remoteFolder.getRichWorkspace());
 
-        DecryptedFolderMetadata metadata = RefreshFolderOperation.getDecryptedFolderMetadata(encryptedAncestor,
-                                                                                             mLocalFolder,
-                                                                                             getClient(),
-                                                                                             user,
-                                                                                             mContext);
+        Object object = RefreshFolderOperation.getDecryptedFolderMetadata(encryptedAncestor,
+                                                                                                 mLocalFolder,
+                                                                                                 getClient(),
+                                                                                                 user,
+                                                                                                 mContext);
+        if (mLocalFolder.isEncrypted() && object == null) {
+            throw new IllegalStateException("metadata is null!");
+        }
 
         // get current data about local contents of the folder to synchronize
-        Map<String, OCFile> localFilesMap =
-            RefreshFolderOperation.prefillLocalFilesMap(metadata,
-                                                        storageManager.getFolderContent(mLocalFolder, false));
+        Map<String, OCFile> localFilesMap;
+        E2EVersion e2EVersion;
+
+        if (object instanceof DecryptedFolderMetadataFileV1) {
+            e2EVersion = E2EVersion.V1_2;
+            localFilesMap = RefreshFolderOperation.prefillLocalFilesMap((DecryptedFolderMetadataFileV1) object,
+                                                                        storageManager.getFolderContent(mLocalFolder, false));
+        } else {
+            e2EVersion = E2EVersion.V2_0;
+            localFilesMap = RefreshFolderOperation.prefillLocalFilesMap((DecryptedFolderMetadataFile) object,
+                                                                        storageManager.getFolderContent(mLocalFolder, false));
+        }
 
         // loop to synchronize every child
         List<OCFile> updatedFiles = new ArrayList<>(folderAndFiles.size() - 1);
@@ -323,8 +324,14 @@ public class SynchronizeFolderOperation extends SyncOperation {
             FileStorageUtils.searchForLocalFileInDefaultPath(updatedFile, user.getAccountName());
 
             // update file name for encrypted files
-            if (metadata != null) {
-                RefreshFolderOperation.updateFileNameForEncryptedFile(storageManager, metadata, updatedFile);
+            if (e2EVersion == E2EVersion.V1_2) {
+                RefreshFolderOperation.updateFileNameForEncryptedFileV1(storageManager,
+                                                 (DecryptedFolderMetadataFileV1) object,
+                                                 updatedFile);
+            } else {
+                RefreshFolderOperation.updateFileNameForEncryptedFile(storageManager,
+                                               (DecryptedFolderMetadataFile) object,
+                                               updatedFile);
             }
 
             // we parse content, so either the folder itself or its direct parent (which we check) must be encrypted
@@ -337,8 +344,15 @@ public class SynchronizeFolderOperation extends SyncOperation {
             updatedFiles.add(updatedFile);
         }
 
-        if (metadata != null) {
-            RefreshFolderOperation.updateFileNameForEncryptedFile(storageManager, metadata, mLocalFolder);
+        // update file name for encrypted files
+        if (e2EVersion == E2EVersion.V1_2) {
+            RefreshFolderOperation.updateFileNameForEncryptedFileV1(storageManager,
+                                                                    (DecryptedFolderMetadataFileV1) object,
+                                                                    mLocalFolder);
+        } else {
+            RefreshFolderOperation.updateFileNameForEncryptedFile(storageManager,
+                                                                  (DecryptedFolderMetadataFile) object,
+                                                                  mLocalFolder);
         }
 
         // save updated contents in local database
@@ -348,7 +362,7 @@ public class SynchronizeFolderOperation extends SyncOperation {
     }
 
     private void updateLocalStateData(OCFile remoteFile, OCFile localFile, OCFile updatedFile) {
-        updatedFile.setLastSyncDateForProperties(mCurrentSyncTime);
+        updatedFile.setLastSyncDateForProperties(System.currentTimeMillis());
         if (localFile != null) {
             updatedFile.setFileId(localFile.getFileId());
             updatedFile.setLastSyncDateForData(localFile.getLastSyncDateForData());
@@ -376,8 +390,8 @@ public class SynchronizeFolderOperation extends SyncOperation {
         }
     }
 
-    private void classifyFileForLaterSyncOrDownload(OCFile remoteFile, OCFile localFile)
-            throws OperationCancelledException {
+    @SuppressFBWarnings("JLM")
+    private void classifyFileForLaterSyncOrDownload(OCFile remoteFile, OCFile localFile) throws OperationCancelledException {
         if (remoteFile.isFolder()) {
             /// to download children files recursively
             synchronized (mCancellationRequested) {
@@ -395,7 +409,8 @@ public class SynchronizeFolderOperation extends SyncOperation {
                 user,
                 true,
                 mContext,
-                getStorageManager()
+                getStorageManager(),
+                syncInBackgroundWorker
             );
             mFilesToSyncContents.add(operation);
         }
@@ -405,21 +420,9 @@ public class SynchronizeFolderOperation extends SyncOperation {
     private void prepareOpsFromLocalKnowledge() throws OperationCancelledException {
         List<OCFile> children = getStorageManager().getFolderContent(mLocalFolder, false);
         for (OCFile child : children) {
-            /// classify file to sync/download contents later
-            if (child.isFolder()) {
-                /// to download children files recursively
-                synchronized(mCancellationRequested) {
-                    if (mCancellationRequested.get()) {
-                        throw new OperationCancelledException();
-                    }
-                    startSyncFolderOperation(child.getRemotePath());
-                }
-
-            } else {
-                /// synchronization for regular files
+            if (!child.isFolder()) {
                 if (!child.isDown()) {
                     mFilesForDirectDownload.add(child);
-
                 } else {
                     /// this should result in direct upload of files that were locally modified
                     SynchronizeFileOperation operation = new SynchronizeFileOperation(
@@ -428,38 +431,76 @@ public class SynchronizeFolderOperation extends SyncOperation {
                         user,
                         true,
                         mContext,
-                        getStorageManager()
+                        getStorageManager(),
+                        syncInBackgroundWorker
                     );
                     mFilesToSyncContents.add(operation);
-
                 }
-
             }
         }
     }
 
-
-    private void syncContents() throws OperationCancelledException {
+    private void syncContents(OwnCloudClient client) throws OperationCancelledException {
         startDirectDownloads();
         startContentSynchronizations(mFilesToSyncContents);
+        updateETag(client);
     }
 
+    /**
+     * Updates the eTag of the local folder after a successful synchronization.
+     * This ensures that any changes to local files, which may alter the eTag, are correctly reflected.
+     *
+     * @param client the OwnCloudClient instance used to execute remote operations.
+     */
+    private void updateETag(OwnCloudClient client) {
+        ReadFolderRemoteOperation operation = new ReadFolderRemoteOperation(mRemotePath);
+        final var result = operation.execute(client);
 
-    private void startDirectDownloads() throws OperationCancelledException {
-        for (OCFile file : mFilesForDirectDownload) {
-            synchronized(mCancellationRequested) {
-                if (mCancellationRequested.get()) {
-                    throw new OperationCancelledException();
+        if (result.getData().get(0) instanceof RemoteFile remoteFile) {
+            String eTag = remoteFile.getEtag();
+            mLocalFolder.setEtag(eTag);
+
+            final FileDataStorageManager storageManager = getStorageManager();
+            storageManager.saveFile(mLocalFolder);
+        }
+    }
+
+    private void startDirectDownloads() {
+        final var fileDownloadHelper = FileDownloadHelper.Companion.instance();
+        
+        if (syncInBackgroundWorker) {
+            try {
+                for (OCFile file: mFilesForDirectDownload) {
+                    synchronized (mCancellationRequested) {
+                        if (mCancellationRequested.get()) {
+                            break;
+                        }
+                    }
+
+                    if (file == null) {
+                        continue;
+                    }
+
+                    final var operation = new DownloadFileOperation(user, file, mContext);
+                    var result = operation.execute(getClient());
+
+                    String filename = file.getFileName();
+                    if (filename == null) {
+                        continue;
+                    }
+
+                    if (result.isSuccess()) {
+                        fileDownloadHelper.saveFile(file, operation, getStorageManager());
+                        Log_OC.d(TAG, "startDirectDownloads completed for: " + file.getFileName());
+                    } else {
+                        Log_OC.d(TAG, "startDirectDownloads failed for: " + file.getFileName());
+                    }
                 }
-                Intent i = new Intent(mContext, FileDownloader.class);
-                i.putExtra(FileDownloader.EXTRA_USER, user);
-                i.putExtra(FileDownloader.EXTRA_FILE, file);
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    mContext.startForegroundService(i);
-                } else {
-                    mContext.startService(i);
-                }
+            } catch (Exception e) {
+                Log_OC.d(TAG, "Exception caught at startDirectDownloads" + e);
             }
+        } else {
+            mFilesForDirectDownload.forEach(file -> fileDownloadHelper.downloadFile(user, file));
         }
     }
 

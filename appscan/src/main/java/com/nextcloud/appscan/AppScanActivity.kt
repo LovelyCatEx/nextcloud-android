@@ -1,31 +1,20 @@
 /*
- * Nextcloud Android client application
+ * Nextcloud - Android Client
  *
- *  @author Álvaro Brey
- *  Copyright (C) 2023 Álvaro Brey
- *  Copyright (C) 2023 Nextcloud GmbH
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU AFFERO GENERAL PUBLIC LICENSE
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU AFFERO GENERAL PUBLIC LICENSE for more details.
- *
- * You should have received a copy of the GNU Affero General Public
- * License along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
+ * SPDX-FileCopyrightText: 2023 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2023 Nextcloud GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
-
 package com.nextcloud.appscan
 
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.View
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import com.zynksoftware.documentscanner.ScanActivity
 import com.zynksoftware.documentscanner.model.DocumentScannerErrorModel
 import com.zynksoftware.documentscanner.model.ScannerResults
@@ -35,8 +24,28 @@ import com.zynksoftware.documentscanner.ui.DocumentScanner
 class AppScanActivity : ScanActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        addSystemBarPaddings()
         DocumentScanner.init(this)
         addFragmentContentLayout()
+    }
+
+    private fun addSystemBarPaddings() {
+        if (window == null) {
+            return
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { v: View, insets: WindowInsetsCompat ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+
+            v.updatePadding(
+                left = bars.left,
+                top = bars.top,
+                right = bars.right,
+                bottom = bars.bottom
+            )
+
+            WindowInsetsCompat.CONSUMED
+        }
     }
 
     override fun onError(error: DocumentScannerErrorModel) {

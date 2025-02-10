@@ -1,25 +1,17 @@
 /*
- * ownCloud Android client application
+ * Nextcloud - Android Client
  *
- * @author masensio
- * @author David A. Velasco
- * @author Chris Narkiewicz
- * @author TSI-mc
- * Copyright (C) 2015 ownCloud Inc.
- * Copyright (C) 2019 Chris Narkiewicz <hello@ezaquarii.com>
- * Copyright (C) 2023 TSI-mc
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2,
- * as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2023 Alper Ozturk <alper.ozturk@nextcloud.com>
+ * SPDX-FileCopyrightText: 2023 TSI-mc
+ * SPDX-FileCopyrightText: 2022-2023 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2016-2020 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2019 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-FileCopyrightText: 2019 Alice Gaudon <alice@gaudon.pro>
+ * SPDX-FileCopyrightText: 2016 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-FileCopyrightText: 2015 ownCloud Inc.
+ * SPDX-FileCopyrightText: 2014 David A. Velasco <dvelasco@solidgear.es>
+ * SPDX-FileCopyrightText: 2013 María Asensio Valverde <masensio@solidgear.es>
+ * SPDX-License-Identifier: GPL-2.0-only AND (AGPL-3.0-or-later OR GPL-2.0-only)
  */
 package com.owncloud.android;
 
@@ -29,12 +21,16 @@ import android.app.ActivityManager;
 import android.app.Application;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.ActivityInfo;
+import android.content.IntentFilter;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.res.Resources;
+import android.net.ConnectivityManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -42,6 +38,7 @@ import android.os.StrictMode;
 import android.text.TextUtils;
 import android.view.WindowManager;
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.nextcloud.appReview.InAppReviewHelper;
 import com.nextcloud.client.account.User;
 import com.nextcloud.client.account.UserAccountManager;
@@ -62,14 +59,18 @@ import com.nextcloud.client.onboarding.OnboardingService;
 import com.nextcloud.client.preferences.AppPreferences;
 import com.nextcloud.client.preferences.AppPreferencesImpl;
 import com.nextcloud.client.preferences.DarkMode;
+import com.nextcloud.receiver.NetworkChangeListener;
+import com.nextcloud.receiver.NetworkChangeReceiver;
+import com.nextcloud.utils.extensions.ContextExtensionsKt;
+import com.nextcloud.utils.mdm.MDMConfig;
 import com.nmc.android.ui.LauncherActivity;
-import com.owncloud.android.authentication.AuthenticatorActivity;
 import com.owncloud.android.authentication.PassCodeManager;
 import com.owncloud.android.datamodel.ArbitraryDataProvider;
 import com.owncloud.android.datamodel.ArbitraryDataProviderImpl;
 import com.owncloud.android.datamodel.MediaFolder;
 import com.owncloud.android.datamodel.MediaFolderType;
 import com.owncloud.android.datamodel.MediaProvider;
+import com.owncloud.android.datamodel.ReceiverFlag;
 import com.owncloud.android.datamodel.SyncedFolder;
 import com.owncloud.android.datamodel.SyncedFolderProvider;
 import com.owncloud.android.datamodel.ThumbnailsCacheManager;
@@ -92,6 +93,7 @@ import com.owncloud.android.utils.theme.ViewThemeUtils;
 import org.conscrypt.Conscrypt;
 import org.greenrobot.eventbus.EventBus;
 
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
 import java.security.NoSuchAlgorithmException;
 import java.security.Security;
@@ -108,41 +110,39 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.RequiresApi;
 import androidx.annotation.StringRes;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.util.Pair;
-import androidx.multidex.MultiDexApplication;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleEventObserver;
+import androidx.lifecycle.ProcessLifecycleOwner;
 import dagger.android.AndroidInjector;
 import dagger.android.DispatchingAndroidInjector;
 import dagger.android.HasAndroidInjector;
-import de.cotech.hw.SecurityKeyManager;
-import de.cotech.hw.SecurityKeyManagerConfig;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import static com.owncloud.android.ui.activity.ContactsPreferenceActivity.PREFERENCE_CONTACTS_AUTOMATIC_BACKUP;
 
 
 /**
- * Main Application of the project
- * <p>
- * Contains methods to build the "static" strings. These strings were before constants in different classes
+ * Main Application of the project.
+ * Contains methods to build the "static" strings. These strings were before constants in different classes.
  */
-public class MainApp extends MultiDexApplication implements HasAndroidInjector {
-
-    public static final OwnCloudVersion OUTDATED_SERVER_VERSION = NextcloudVersion.nextcloud_23;
-    public static final OwnCloudVersion MINIMUM_SUPPORTED_SERVER_VERSION = OwnCloudVersion.nextcloud_16;
+public class MainApp extends Application implements HasAndroidInjector, NetworkChangeListener {
+    public static final OwnCloudVersion OUTDATED_SERVER_VERSION = NextcloudVersion.nextcloud_28;
+    public static final OwnCloudVersion MINIMUM_SUPPORTED_SERVER_VERSION = OwnCloudVersion.nextcloud_18;
 
     private static final String TAG = MainApp.class.getSimpleName();
     public static final String DOT = ".";
 
-    private static Context mContext;
+    private static WeakReference<Context> appContext;
 
     private static String storagePath;
 
     private static boolean mOnlyOnDevice;
+    private static boolean mOnlyPersonalFiles;
 
+    
     @Inject
     protected AppPreferences preferences;
 
@@ -160,6 +160,9 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
 
     @Inject
     ConnectivityService connectivityService;
+
+    @Inject
+    SyncedFolderProvider syncedFolderProvider;
 
     @Inject PowerManagementService powerManagementService;
 
@@ -199,11 +202,13 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
 
     private static AppComponent appComponent;
 
+    private NetworkChangeReceiver networkChangeReceiver;
+
     /**
      * Temporary hack
      */
     private static void initGlobalContext(Context context) {
-        mContext = context;
+        appContext = new WeakReference<>(context);
     }
 
     /**
@@ -220,6 +225,11 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
      */
     public PowerManagementService getPowerManagementService() {
         return powerManagementService;
+    }
+
+    private void registerNetworkChangeReceiver() {
+        IntentFilter filter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
+        registerReceiver(networkChangeReceiver, filter);
     }
 
     private String getAppProcessName() {
@@ -255,9 +265,12 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
 
         if (!isCrashReportingProcess && !appInfo.isDebugBuild()) {
             Thread.UncaughtExceptionHandler defaultPlatformHandler = Thread.getDefaultUncaughtExceptionHandler();
-            final ExceptionHandler crashReporter = new ExceptionHandler(this,
-                                                                        defaultPlatformHandler);
-            Thread.setDefaultUncaughtExceptionHandler(crashReporter);
+
+            if (defaultPlatformHandler != null) {
+                final ExceptionHandler crashReporter = new ExceptionHandler(this,
+                                                                            defaultPlatformHandler);
+                Thread.setDefaultUncaughtExceptionHandler(crashReporter);
+            }
         }
     }
 
@@ -284,6 +297,7 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
         return appComponent;
     }
 
+
     @SuppressFBWarnings("ST")
     @Override
     public void onCreate() {
@@ -294,9 +308,9 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
         setAppTheme(preferences.getDarkThemeMode());
         super.onCreate();
 
-        insertConscrypt();
+        ProcessLifecycleOwner.get().getLifecycle().addObserver(lifecycleEventObserver);
 
-        initSecurityKeyManager();
+        insertConscrypt();
 
         registerActivityLifecycleCallbacks(new ActivityInjector());
 
@@ -311,29 +325,36 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
 
         fixStoragePath();
 
+        checkCancelDownloadJobs();
+
         MainApp.storagePath = preferences.getStoragePath(getApplicationContext().getFilesDir().getAbsolutePath());
 
         OwnCloudClientManagerFactory.setUserAgent(getUserAgent());
 
+        if (isClientBrandedPlus()) {
+            setProxyConfig();
+            ContextExtensionsKt.registerBroadcastReceiver(this, restrictionsReceiver, restrictionsFilter, ReceiverFlag.NotExported);
+        } else {
+            setProxyForNonBrandedPlusClients();
+        }
+
         // initialise thumbnails cache on background thread
         new ThumbnailsCacheManager.InitDiskCacheTask().execute();
 
-
-        if (BuildConfig.DEBUG || getApplicationContext().getResources().getBoolean(R.bool.logger_enabled)) {
+        if (MDMConfig.INSTANCE.isLogEnabled(this)) {
             // use app writable dir, no permissions needed
             Log_OC.setLoggerImplementation(new LegacyLoggerAdapter(logger));
             Log_OC.d("Debug", "start logging");
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            try {
-                Method m = StrictMode.class.getMethod("disableDeathOnFileUriExposure");
-                m.invoke(null);
-            } catch (Exception e) {
-                Log_OC.d("Debug", "Failed to disable uri exposure");
-            }
+        try {
+            Method m = StrictMode.class.getMethod("disableDeathOnFileUriExposure");
+            m.invoke(null);
+        } catch (Exception e) {
+            Log_OC.d("Debug", "Failed to disable uri exposure");
         }
-        initSyncOperations(preferences,
+        initSyncOperations(this,
+                           preferences,
                            uploadsStorageManager,
                            accountManager,
                            connectivityService,
@@ -341,14 +362,101 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
                            backgroundJobManager,
                            clock,
                            viewThemeUtils,
-                           walledCheckCache);
+                           walledCheckCache,
+                           syncedFolderProvider);
         initContactsBackup(accountManager, backgroundJobManager);
         notificationChannels();
 
-        backgroundJobManager.scheduleMediaFoldersDetectionJob();
-        backgroundJobManager.startMediaFoldersDetectionJob();
+        if (backgroundJobManager != null) {
+            backgroundJobManager.scheduleMediaFoldersDetectionJob();
+            backgroundJobManager.startMediaFoldersDetectionJob();
+            backgroundJobManager.schedulePeriodicHealthStatus();
+
+            if (preferences.isTwoWaySyncEnabled()) {
+                backgroundJobManager.scheduleInternal2WaySync(preferences.getTwoWaySyncInterval());
+            }
+
+            backgroundJobManager.startPeriodicallyOfflineOperation();
+        }
 
         registerGlobalPassCodeProtection();
+        networkChangeReceiver = new NetworkChangeReceiver(this, connectivityService);
+        registerNetworkChangeReceiver();
+
+        if (!MDMConfig.INSTANCE.sendFilesSupport(this)) {
+            disableDocumentsStorageProvider();
+        }
+        
+        
+     }
+
+    public void disableDocumentsStorageProvider() {
+        String packageName = getPackageName();
+        String providerClassName = "com.owncloud.android.providers.DocumentsStorageProvider";
+        ComponentName componentName = new ComponentName(packageName, providerClassName);
+        PackageManager packageManager = getPackageManager();
+        packageManager.setComponentEnabledSetting(componentName, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP);
+    }
+
+    private final LifecycleEventObserver lifecycleEventObserver = ((lifecycleOwner, event) -> {
+        if (event == Lifecycle.Event.ON_START) {
+            Log_OC.d(TAG, "APP IN FOREGROUND");
+        } else if (event == Lifecycle.Event.ON_STOP) {
+            passCodeManager.setCanAskPin(true);
+            Log_OC.d(TAG, "APP IN BACKGROUND");
+        } else if (event == Lifecycle.Event.ON_RESUME) {
+            setProxyConfig();
+            Log_OC.d(TAG, "APP ON RESUME");
+        }
+    });
+
+    private void setProxyForNonBrandedPlusClients() {
+        try {
+            OwnCloudClientManagerFactory.setProxyHost(getResources().getString(R.string.proxy_host));
+            OwnCloudClientManagerFactory.setProxyPort(getResources().getInteger(R.integer.proxy_port));
+        } catch (Resources.NotFoundException e) {
+            Log_OC.d(TAG, "Error caught at setProxyForNonBrandedPlusClients: " + e);
+        }
+    }
+    
+    public static boolean isClientBranded() {
+        return getAppContext().getResources().getBoolean(R.bool.is_branded_client);
+    }
+
+    public static boolean isClientBrandedPlus() {
+        return getAppContext().getResources().getBoolean(R.bool.is_branded_plus_client);
+    }
+
+    private final IntentFilter restrictionsFilter = new IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED);
+
+    private final BroadcastReceiver restrictionsReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            setProxyConfig();
+        }
+    };
+
+    private void setProxyConfig() {
+        if (!isClientBrandedPlus()) {
+            Log_OC.d(TAG, "Proxy configuration cannot be set. Client is not branded plus.");
+            return;
+        }
+
+        String host = MDMConfig.INSTANCE.getHost(this);
+        int port = MDMConfig.INSTANCE.getPort(this);
+
+        if (TextUtils.isEmpty(host) || port == -1) {
+            Log_OC.d(TAG, "Proxy configuration cannot be found");
+            return;
+        }
+
+        try {
+            OwnCloudClientManagerFactory.setProxyHost(host);
+            OwnCloudClientManagerFactory.setProxyPort(port);
+
+            Log_OC.d(TAG, "Proxy configuration successfully set");
+        } catch (Resources.NotFoundException e) {
+            Log_OC.e(TAG, "Proxy config cannot able to set due to: $e");
+        }
     }
 
     private void registerGlobalPassCodeProtection() {
@@ -402,42 +510,16 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
         });
     }
 
-    @SuppressWarnings("unchecked")
-    private void initSecurityKeyManager() {
-        SecurityKeyManager securityKeyManager = SecurityKeyManager.getInstance();
-        final SecurityKeyManagerConfig.Builder configBuilder = new SecurityKeyManagerConfig.Builder()
-            .setEnableDebugLogging(BuildConfig.DEBUG);
-
-        try {
-            // exclude all activities except AuthenticatorActivity
-            final PackageManager pm = this.getPackageManager();
-            final PackageInfo info = pm.getPackageInfo(this.getPackageName(), PackageManager.GET_ACTIVITIES);
-            final ActivityInfo[] activities = info.activities;
-            for (ActivityInfo activityInfo : activities) {
-                try {
-                    final Class<? extends Activity> aClass = (Class<? extends Activity>) Class.forName(activityInfo.name);
-                    if (aClass != AuthenticatorActivity.class) {
-                        configBuilder.addExcludedActivityClass(aClass);
-                    }
-                } catch (ClassNotFoundException | ClassCastException e) {
-                    Log_OC.e(TAG, "Couldn't disable activity for security key listener", e);
-                }
-            }
-        } catch (PackageManager.NameNotFoundException e) {
-            Log_OC.e(TAG, "Couldn't disable activities for security key listener", e);
+    public static void initContactsBackup(UserAccountManager accountManager, BackgroundJobManager backgroundJobManager) {
+        ArbitraryDataProvider arbitraryDataProvider = new ArbitraryDataProviderImpl(appContext.get());
+        if (accountManager == null) {
+            return;
         }
 
-
-        securityKeyManager.init(this, configBuilder.build());
-    }
-
-    public static void initContactsBackup(UserAccountManager accountManager, BackgroundJobManager backgroundJobManager) {
-        ArbitraryDataProvider arbitraryDataProvider = new ArbitraryDataProviderImpl(mContext);
         List<User> users = accountManager.getAllUsers();
         for (User user : users) {
-            if (arbitraryDataProvider.getBooleanValue(user, PREFERENCE_CONTACTS_AUTOMATIC_BACKUP)) {
+            if (backgroundJobManager != null && arbitraryDataProvider.getBooleanValue(user, PREFERENCE_CONTACTS_AUTOMATIC_BACKUP)) {
                 backgroundJobManager.schedulePeriodicContactsBackup(user);
-
             }
         }
     }
@@ -522,7 +604,15 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
         }
     }
 
+    private void checkCancelDownloadJobs() {
+        if (backgroundJobManager != null && preferences.shouldStopDownloadJobsOnStart()) {
+            backgroundJobManager.cancelAllFilesDownloadJobs();
+            preferences.setStopDownloadJobsOnStart(false);
+        }
+    }
+
     public static void initSyncOperations(
+        final Context context,
         final AppPreferences preferences,
         final UploadsStorageManager uploadsStorageManager,
         final UserAccountManager accountManager,
@@ -531,8 +621,9 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
         final BackgroundJobManager backgroundJobManager,
         final Clock clock,
         final ViewThemeUtils viewThemeUtils,
-        final WalledCheckCache walledCheckCache) {
-        updateToAutoUpload();
+        final WalledCheckCache walledCheckCache,
+        final SyncedFolderProvider syncedFolderProvider) {
+        updateToAutoUpload(context);
         cleanOldEntries(clock);
         updateAutoUploadEntries(clock);
 
@@ -545,12 +636,12 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
         }
 
         if (!preferences.isAutoUploadInitialized()) {
-            backgroundJobManager.startImmediateFilesSyncJob(false, false);
+            FilesSyncHelper.startFilesSyncForAllFolders(syncedFolderProvider, backgroundJobManager,false, new String[]{});
             preferences.setAutoUploadInit(true);
         }
 
-        FilesSyncHelper.scheduleFilesSyncIfNeeded(mContext, backgroundJobManager);
-        FilesSyncHelper.restartJobsIfNeeded(
+        FilesSyncHelper.scheduleFilesSyncForAllFoldersIfNeeded(appContext.get(), syncedFolderProvider, backgroundJobManager);
+        FilesSyncHelper.restartUploadsIfNeeded(
             uploadsStorageManager,
             accountManager,
             connectivityService,
@@ -604,6 +695,10 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
                               R.string.notification_channel_push_name, R.string
                                   .notification_channel_push_description, context, NotificationManager.IMPORTANCE_DEFAULT);
 
+                createChannel(notificationManager, NotificationUtils.NOTIFICATION_CHANNEL_BACKGROUND_OPERATIONS,
+                              R.string.notification_channel_background_operations_name, R.string
+                                  .notification_channel_background_operations_description, context, NotificationManager.IMPORTANCE_DEFAULT);
+
                 createChannel(notificationManager, NotificationUtils.NOTIFICATION_CHANNEL_GENERAL, R.string
                                   .notification_channel_general_name, R.string.notification_channel_general_description,
                               context, NotificationManager.IMPORTANCE_DEFAULT);
@@ -613,7 +708,6 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
         }
     }
 
-    @RequiresApi(api = Build.VERSION_CODES.N)
     private static void createChannel(NotificationManager notificationManager,
                                       String channelId, int channelName,
                                       int channelDescription, Context context) {
@@ -637,13 +731,20 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
         }
     }
 
+    public static String string(int id) {
+        return getAppContext().getString(id);
+    }
+
+    public static String string(int id, Object args) {
+        return getAppContext().getString(id, args);
+    }
 
     public static Context getAppContext() {
-        return MainApp.mContext;
+        return MainApp.appContext.get();
     }
 
     public static void setAppContext(Context context) {
-        MainApp.mContext = context;
+        MainApp.appContext = new WeakReference<>(context);
     }
 
     public static String getStoragePath() {
@@ -664,41 +765,48 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
     //  From AccountAuthenticator
     //  public static final String AUTHORITY = "org.owncloud";
     public static String getAuthority() {
-        return getAppContext().getResources().getString(R.string.authority);
+        return string(R.string.authority);
     }
 
     //  From AccountAuthenticator
     //  public static final String AUTH_TOKEN_TYPE = "org.owncloud";
     public static String getAuthTokenType() {
-        return getAppContext().getResources().getString(R.string.authority);
+        return string(R.string.authority);
     }
 
     //  From ProviderMeta
     //  public static final String DB_FILE = "owncloud.db";
     public static String getDBFile() {
-        return getAppContext().getResources().getString(R.string.db_file);
+        return string(R.string.db_file);
     }
 
     //  From ProviderMeta
     //  private final String mDatabaseName = "ownCloud";
     public static String getDBName() {
-        return getAppContext().getResources().getString(R.string.db_name);
+        return string(R.string.db_name);
     }
 
     /**
      * name of data_folder, e.g., "owncloud"
      */
     public static String getDataFolder() {
-        return getAppContext().getResources().getString(R.string.data_folder);
+        return string(R.string.data_folder);
     }
 
     public static void showOnlyFilesOnDevice(boolean state) {
         mOnlyOnDevice = state;
     }
 
+    public static void showOnlyPersonalFiles(boolean state) {
+        mOnlyPersonalFiles = state;
+    }
 
     public static boolean isOnlyOnDevice() {
         return mOnlyOnDevice;
+    }
+
+    public static boolean isOnlyPersonFiles() {
+        return mOnlyPersonalFiles;
     }
 
     public static String getUserAgent() {
@@ -706,9 +814,14 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
         return getUserAgent(R.string.nextcloud_user_agent);
     }
 
+    public static void showMessage(int messageId) {
+        ContextExtensionsKt.showToast(getAppContext(), messageId);
+    }
+
     // user agent
     private static String getUserAgent(@StringRes int agent) {
-        String appString = getAppContext().getResources().getString(agent);
+        String appString = string(agent);
+        String brandedName = string(R.string.name_for_branded_user_agent);
         String packageName = getAppContext().getPackageName();
         String version = "";
 
@@ -721,33 +834,38 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
             Log_OC.e(TAG, "Trying to get packageName", e.getCause());
         }
 
-        return String.format(appString, version);
+        return String.format(appString, version, brandedName);
     }
 
-    private static void updateToAutoUpload() {
-        Context context = getAppContext();
+    private static void updateToAutoUpload(Context context) {
         AppPreferences preferences = AppPreferencesImpl.fromContext(context);
         if (preferences.instantPictureUploadEnabled() || preferences.instantVideoUploadEnabled()) {
             preferences.removeLegacyPreferences();
 
             // show info pop-up
             try {
-                new AlertDialog.Builder(context, R.style.Theme_ownCloud_Dialog)
-                    .setTitle(R.string.drawer_synced_folders)
-                    .setMessage(R.string.synced_folders_new_info)
-                    .setPositiveButton(R.string.drawer_open, (dialog, which) -> {
-                        // show Auto Upload
-                        Intent folderSyncIntent = new Intent(context, SyncedFoldersActivity.class);
-                        dialog.dismiss();
-                        context.startActivity(folderSyncIntent);
-                    })
-                    .setNegativeButton(R.string.drawer_close, (dialog, which) -> dialog.dismiss())
-                    .setIcon(R.drawable.nav_synced_folders)
-                    .show();
+                showAutoUploadAlertDialog(context);
             } catch (WindowManager.BadTokenException e) {
                 Log_OC.i(TAG, "Error showing Auto Upload Update dialog, so skipping it: " + e.getMessage());
             }
         }
+    }
+
+    
+
+    private static void showAutoUploadAlertDialog(Context context) {
+        new MaterialAlertDialogBuilder(context, R.style.Theme_ownCloud_Dialog)
+            .setTitle(R.string.drawer_synced_folders)
+            .setMessage(R.string.synced_folders_new_info)
+            .setPositiveButton(R.string.drawer_open, (dialog, which) -> {
+                Intent folderSyncIntent = new Intent(context, SyncedFoldersActivity.class);
+                dialog.dismiss();
+                context.startActivity(folderSyncIntent);
+            })
+            .setNegativeButton(R.string.drawer_close, (dialog, which) -> dialog.dismiss())
+            .setIcon(R.drawable.nav_synced_folders)
+            .create()
+            .show();
     }
 
     private static void updateAutoUploadEntries(Clock clock) {
@@ -757,7 +875,7 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
         if (!preferences.isAutoUploadPathsUpdateEnabled()) {
             SyncedFolderProvider syncedFolderProvider =
                 new SyncedFolderProvider(MainApp.getAppContext().getContentResolver(), preferences, clock);
-            syncedFolderProvider.updateAutoUploadPaths(mContext);
+            syncedFolderProvider.updateAutoUploadPaths(appContext.get());
         }
     }
 
@@ -794,25 +912,34 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
                     + syncedFolder.getId() + " - " + syncedFolder.getLocalPath());
 
                 for (MediaFolder imageMediaFolder : imageMediaFolders) {
-                    if (imageMediaFolder.absolutePath.equals(syncedFolder.getLocalPath())) {
-                        newSyncedFolder = (SyncedFolder) syncedFolder.clone();
-                        newSyncedFolder.setType(MediaFolderType.IMAGE);
-                        primaryKey = syncedFolderProvider.storeSyncedFolder(newSyncedFolder);
-                        Log_OC.i(TAG, "Migrated image synced_folders record: "
-                            + primaryKey + " - " + newSyncedFolder.getLocalPath());
-                        break;
+                    String absolutePathOfImageFolder = imageMediaFolder.absolutePath;
+
+                    if (absolutePathOfImageFolder != null) {
+                        if (absolutePathOfImageFolder.equals(syncedFolder.getLocalPath())) {
+                            newSyncedFolder = (SyncedFolder) syncedFolder.clone();
+                            newSyncedFolder.setType(MediaFolderType.IMAGE);
+                            primaryKey = syncedFolderProvider.storeSyncedFolder(newSyncedFolder);
+                            Log_OC.i(TAG, "Migrated image synced_folders record: "
+                                + primaryKey + " - " + newSyncedFolder.getLocalPath());
+                            break;
+                        }
                     }
                 }
 
                 for (MediaFolder videoMediaFolder : videoMediaFolders) {
-                    if (videoMediaFolder.absolutePath.equals(syncedFolder.getLocalPath())) {
-                        newSyncedFolder = (SyncedFolder) syncedFolder.clone();
-                        newSyncedFolder.setType(MediaFolderType.VIDEO);
-                        primaryKey = syncedFolderProvider.storeSyncedFolder(newSyncedFolder);
-                        Log_OC.i(TAG, "Migrated video synced_folders record: "
-                            + primaryKey + " - " + newSyncedFolder.getLocalPath());
-                        break;
+                    String absolutePathOfVideoFolder = videoMediaFolder.absolutePath;
+
+                    if (absolutePathOfVideoFolder != null) {
+                        if (absolutePathOfVideoFolder.equals(syncedFolder.getLocalPath())) {
+                            newSyncedFolder = (SyncedFolder) syncedFolder.clone();
+                            newSyncedFolder.setType(MediaFolderType.VIDEO);
+                            primaryKey = syncedFolderProvider.storeSyncedFolder(newSyncedFolder);
+                            Log_OC.i(TAG, "Migrated video synced_folders record: "
+                                + primaryKey + " - " + newSyncedFolder.getLocalPath());
+                            break;
+                        }
                     }
+
                 }
             }
 
@@ -838,19 +965,22 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
 
             List<SyncedFolder> syncedFolderList = syncedFolderProvider.getSyncedFolders();
             Map<Pair<String, String>, Long> syncedFolders = new HashMap<>();
-            ArrayList<Long> ids = new ArrayList<>();
             for (SyncedFolder syncedFolder : syncedFolderList) {
                 Pair<String, String> checkPair = new Pair<>(syncedFolder.getAccount(), syncedFolder.getLocalPath());
                 if (syncedFolders.containsKey(checkPair)) {
-                    if (syncedFolder.getId() > syncedFolders.get(checkPair)) {
-                        syncedFolders.put(checkPair, syncedFolder.getId());
+                    Long folderId = syncedFolders.get(checkPair);
+
+                    if (folderId != null) {
+                        if (syncedFolder.getId() > folderId) {
+                            syncedFolders.put(checkPair, syncedFolder.getId());
+                        }
                     }
                 } else {
                     syncedFolders.put(checkPair, syncedFolder.getId());
                 }
             }
 
-            ids.addAll(syncedFolders.values());
+            ArrayList<Long> ids = new ArrayList<>(syncedFolders.values());
 
             if (ids.size() > 0) {
                 int deletedCount = syncedFolderProvider.deleteSyncedFoldersNotInList(ids);
@@ -868,18 +998,23 @@ public class MainApp extends MultiDexApplication implements HasAndroidInjector {
         return dispatchingAndroidInjector;
     }
 
-
     public static void setAppTheme(DarkMode mode) {
         switch (mode) {
-            case LIGHT:
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
-                break;
-            case DARK:
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
-                break;
-            case SYSTEM:
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
-                break;
+            case LIGHT -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
+            case DARK -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
+            case SYSTEM -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
+        }
+    }
+
+    @Override
+    public void networkAndServerConnectionListener(boolean isNetworkAndServerAvailable) {
+        if (backgroundJobManager == null) {
+            Log_OC.d(TAG, "Offline operations terminated, backgroundJobManager cannot be null");
+            return;
+        }
+
+        if (isNetworkAndServerAvailable) {
+            backgroundJobManager.startOfflineOperations();
         }
     }
 }

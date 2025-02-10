@@ -1,3 +1,9 @@
+/*
+ * Nextcloud - Android Client
+ *
+ * SPDX-FileCopyrightText: 2018 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
+ */
 package com.owncloud.android;
 
 import android.accounts.Account;
@@ -7,6 +13,8 @@ import android.accounts.OperationCanceledException;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
+import android.content.res.Configuration;
+import android.content.res.Resources;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
@@ -19,30 +27,33 @@ import com.nextcloud.client.account.UserAccountManager;
 import com.nextcloud.client.account.UserAccountManagerImpl;
 import com.nextcloud.client.device.BatteryStatus;
 import com.nextcloud.client.device.PowerManagementService;
+import com.nextcloud.client.jobs.upload.FileUploadWorker;
 import com.nextcloud.client.network.Connectivity;
 import com.nextcloud.client.network.ConnectivityService;
 import com.nextcloud.client.preferences.AppPreferencesImpl;
 import com.nextcloud.client.preferences.DarkMode;
 import com.nextcloud.common.NextcloudClient;
-import com.nextcloud.java.util.Optional;
 import com.nextcloud.test.GrantStoragePermissionRule;
+import com.nextcloud.test.RandomStringGenerator;
+import com.owncloud.android.datamodel.ArbitraryDataProvider;
+import com.owncloud.android.datamodel.ArbitraryDataProviderImpl;
 import com.owncloud.android.datamodel.FileDataStorageManager;
 import com.owncloud.android.datamodel.OCFile;
 import com.owncloud.android.datamodel.UploadsStorageManager;
 import com.owncloud.android.db.OCUpload;
-import com.owncloud.android.files.services.FileUploader;
 import com.owncloud.android.files.services.NameCollisionPolicy;
 import com.owncloud.android.lib.common.OwnCloudClient;
 import com.owncloud.android.lib.common.OwnCloudClientFactory;
 import com.owncloud.android.lib.common.accounts.AccountUtils;
 import com.owncloud.android.lib.common.operations.RemoteOperationResult;
+import com.owncloud.android.lib.resources.files.ExistenceCheckRemoteOperation;
 import com.owncloud.android.lib.resources.status.CapabilityBooleanType;
+import com.owncloud.android.lib.resources.status.GetCapabilitiesRemoteOperation;
 import com.owncloud.android.lib.resources.status.OCCapability;
+import com.owncloud.android.lib.resources.status.OwnCloudVersion;
 import com.owncloud.android.operations.CreateFolderOperation;
 import com.owncloud.android.operations.UploadFileOperation;
 import com.owncloud.android.utils.FileStorageUtils;
-
-import junit.framework.TestCase;
 
 import org.apache.commons.io.FileUtils;
 import org.junit.After;
@@ -56,7 +67,9 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Collection;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 
 import androidx.annotation.NonNull;
 import androidx.fragment.app.DialogFragment;
@@ -71,12 +84,11 @@ import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
 import static com.owncloud.android.lib.common.accounts.AccountUtils.Constants.KEY_USER_ID;
 import static org.junit.Assert.assertTrue;
-
+import static org.junit.Assume.assumeTrue;
 
 /**
- * Common base for all integration tests
+ * Common base for all integration tests.
  */
-
 public abstract class AbstractIT {
     @Rule
     public final TestRule permissionRule = GrantStoragePermissionRule.grant();
@@ -94,6 +106,8 @@ public abstract class AbstractIT {
     protected FileDataStorageManager fileDataStorageManager =
         new FileDataStorageManager(user, targetContext.getContentResolver());
 
+    protected ArbitraryDataProvider arbitraryDataProvider = new ArbitraryDataProviderImpl(targetContext);
+
     @BeforeClass
     public static void beforeAll() {
         try {
@@ -107,31 +121,16 @@ public abstract class AbstractIT {
                 }
             }
 
-            Account temp = new Account("test@https://nextcloud.localhost", MainApp.getAccountType(targetContext));
-            platformAccountManager.addAccountExplicitly(temp, "password", null);
-            platformAccountManager.setUserData(temp, AccountUtils.Constants.KEY_OC_BASE_URL, "https://nextcloud.localhost");
-            platformAccountManager.setUserData(temp, KEY_USER_ID, "test");
-
-            final UserAccountManager userAccountManager = UserAccountManagerImpl.fromContext(targetContext);
-            account = userAccountManager.getAccountByName("test@https://nextcloud.localhost");
-
-            if (account == null) {
-                throw new ActivityNotFoundException();
-            }
-
-            Optional<User> optionalUser = userAccountManager.getUser(account.name);
-            user = optionalUser.orElseThrow(IllegalAccessError::new);
+            account = createAccount("test@https://nextcloud.localhost");
+            user = getUser(account);
 
             client = OwnCloudClientFactory.createOwnCloudClient(account, targetContext);
             nextcloudClient = OwnCloudClientFactory.createNextcloudClient(user, targetContext);
-        } catch (OperationCanceledException e) {
-            e.printStackTrace();
-        } catch (AuthenticatorException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (AccountUtils.AccountNotFoundException e) {
-            e.printStackTrace();
+        } catch (OperationCanceledException |
+                 IOException |
+                 AccountUtils.AccountNotFoundException |
+                 AuthenticatorException e) {
+            throw new RuntimeException("Error setting up clients", e);
         }
 
         Bundle arguments = androidx.test.platform.app.InstrumentationRegistry.getArguments();
@@ -183,7 +182,7 @@ public abstract class AbstractIT {
         String darkModeParameter = arguments.getString("DARKMODE");
 
         if (darkModeParameter != null) {
-            if (darkModeParameter.equalsIgnoreCase("dark")) {
+            if ("dark".equalsIgnoreCase(darkModeParameter)) {
                 DARK_MODE = "dark";
                 AppPreferencesImpl.fromContext(targetContext).setDarkThemeMode(DarkMode.DARK);
                 MainApp.setAppTheme(DarkMode.DARK);
@@ -192,11 +191,26 @@ public abstract class AbstractIT {
             }
         }
 
-        if (DARK_MODE.equalsIgnoreCase("light") && COLOR.equalsIgnoreCase("blue")) {
+        if ("light".equalsIgnoreCase(DARK_MODE) && "blue".equalsIgnoreCase(COLOR)) {
             // use already existing names
             DARK_MODE = "";
             COLOR = "";
         }
+    }
+
+    protected void testOnlyOnServer(OwnCloudVersion version) throws AccountUtils.AccountNotFoundException {
+        OCCapability ocCapability = getCapability();
+        assumeTrue(ocCapability.getVersion().isNewerOrEqual(version));
+    }
+
+    protected OCCapability getCapability() throws AccountUtils.AccountNotFoundException {
+        NextcloudClient client = OwnCloudClientFactory.createNextcloudClient(user, targetContext);
+
+        OCCapability ocCapability = (OCCapability) new GetCapabilitiesRemoteOperation()
+            .execute(client)
+            .getSingleData();
+
+        return ocCapability;
     }
 
     @Before
@@ -287,6 +301,10 @@ public abstract class AbstractIT {
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();
     }
 
+    protected void onIdleSync(Runnable recipient) {
+        InstrumentationRegistry.getInstrumentation().waitForIdle(recipient);
+    }
+
     protected void openDrawer(IntentsTestRule activityRule) {
         Activity sut = activityRule.launchActivity(null);
 
@@ -313,7 +331,7 @@ public abstract class AbstractIT {
         return currentActivity;
     }
 
-    protected void shortSleep() {
+    protected static void shortSleep() {
         try {
             Thread.sleep(2000);
         } catch (InterruptedException e) {
@@ -329,12 +347,24 @@ public abstract class AbstractIT {
         }
     }
 
-    public OCFile createFolder(String remotePath) {
-        TestCase.assertTrue(new CreateFolderOperation(remotePath, user, targetContext, getStorageManager())
-                                .execute(client)
-                                .isSuccess());
+    protected void sleep(int second) {
+        try {
+            Thread.sleep(1000L * second);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
 
-        return getStorageManager().getFileByDecryptedRemotePath(remotePath);
+    public OCFile createFolder(String remotePath) {
+        RemoteOperationResult check = new ExistenceCheckRemoteOperation(remotePath, false).execute(client);
+
+        if (!check.isSuccess()) {
+            assertTrue(new CreateFolderOperation(remotePath, user, targetContext, getStorageManager())
+                           .execute(client)
+                           .isSuccess());
+        }
+
+        return getStorageManager().getFileByDecryptedRemotePath(remotePath.endsWith("/") ? remotePath : remotePath + "/");
     }
 
     public void uploadFile(File file, String remotePath) {
@@ -345,6 +375,16 @@ public abstract class AbstractIT {
 
     public void uploadOCUpload(OCUpload ocUpload) {
         ConnectivityService connectivityServiceMock = new ConnectivityService() {
+            @Override
+            public void isNetworkAndServerAvailable(@NonNull GenericCallback<Boolean> callback) {
+
+            }
+
+            @Override
+            public boolean isConnected() {
+                return false;
+            }
+
             @Override
             public boolean isInternetWalled() {
                 return false;
@@ -386,7 +426,7 @@ public abstract class AbstractIT {
             null,
             ocUpload,
             NameCollisionPolicy.DEFAULT,
-            FileUploader.LOCAL_BEHAVIOUR_COPY,
+            FileUploadWorker.LOCAL_BEHAVIOUR_COPY,
             targetContext,
             false,
             false,
@@ -402,8 +442,36 @@ public abstract class AbstractIT {
         assertTrue(result.getLogMessage(), result.isSuccess());
     }
 
+    protected void enableRTL() {
+        Locale locale = new Locale("ar");
+        Resources resources = InstrumentationRegistry.getInstrumentation().getTargetContext().getResources();
+        Configuration config = resources.getConfiguration();
+        config.setLocale(locale);
+        resources.updateConfiguration(config, null);
+    }
+
+    protected void resetLocale() {
+        Locale locale = new Locale("en");
+        Resources resources = InstrumentationRegistry.getInstrumentation().getTargetContext().getResources();
+        Configuration config = resources.getConfiguration();
+        config.setLocale(locale);
+        resources.updateConfiguration(config, null);
+    }
+
     protected void screenshot(View view) {
         screenshot(view, "");
+    }
+
+    protected void screenshotViaName(Activity activity, String name) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            Screenshot.snapActivity(activity).setName(name).record();
+        }
+    }
+
+    protected void screenshotViaName(View view, String name) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            Screenshot.snap(view).setName(name).record();
+        }
     }
 
     protected void screenshot(View view, String prefix) {
@@ -426,9 +494,7 @@ public abstract class AbstractIT {
         return createName("");
     }
 
-    private String createName(String prefix) {
-        String name = TestNameDetector.getTestClass() + "_" + TestNameDetector.getTestName();
-
+    public String createName(String name, String prefix) {
         if (!TextUtils.isEmpty(prefix)) {
             name = name + "_" + prefix;
         }
@@ -444,7 +510,46 @@ public abstract class AbstractIT {
         return name;
     }
 
+    private String createName(String prefix) {
+        String name = TestNameDetector.getTestClass() + "_" + TestNameDetector.getTestName();
+        return createName(name, prefix);
+    }
+
     public static String getUserId(User user) {
         return AccountManager.get(targetContext).getUserData(user.toPlatformAccount(), KEY_USER_ID);
+    }
+
+    public String getRandomName() {
+        return getRandomName(5);
+    }
+
+    public String getRandomName(int length) {
+        return RandomStringGenerator.make(length);
+    }
+
+    protected static User getUser(Account account) {
+        Optional<User> optionalUser = UserAccountManagerImpl.fromContext(targetContext).getUser(account.name);
+        return optionalUser.orElseThrow(IllegalAccessError::new);
+    }
+
+    protected static Account createAccount(String name) {
+        AccountManager platformAccountManager = AccountManager.get(targetContext);
+
+        Account temp = new Account(name, MainApp.getAccountType(targetContext));
+        int atPos = name.lastIndexOf('@');
+        platformAccountManager.addAccountExplicitly(temp, "password", null);
+        platformAccountManager.setUserData(temp, AccountUtils.Constants.KEY_OC_BASE_URL,
+                                           name.substring(atPos + 1));
+        platformAccountManager.setUserData(temp, KEY_USER_ID, name.substring(0, atPos));
+
+        Account account = UserAccountManagerImpl.fromContext(targetContext).getAccountByName(name);
+        if (account == null) {
+            throw new ActivityNotFoundException();
+        }
+        return account;
+    }
+
+    protected static boolean removeAccount(Account account) {
+        return AccountManager.get(targetContext).removeAccountExplicitly(account);
     }
 }

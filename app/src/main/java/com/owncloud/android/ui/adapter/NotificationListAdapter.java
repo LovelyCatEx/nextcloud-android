@@ -1,24 +1,13 @@
 /*
- * ownCloud Android client application
+ * Nextcloud - Android Client
  *
- * @author Andy Scherzinger
- * @author TSI-mc
- * Copyright (C) 2016 ownCloud Inc.
- * Copyright (C) 2023 TSI-mc
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2,
- * as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2023 TSI-mc
+ * SPDX-FileCopyrightText: 2022 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2018-2022 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2017 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-FileCopyrightText: 2017 Mario Danic <mario@lovelyhq.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
-
 package com.owncloud.android.ui.adapter;
 
 import android.content.Context;
@@ -47,9 +36,9 @@ import com.bumptech.glide.load.resource.file.FileToStreamDecoder;
 import com.caverock.androidsvg.SVG;
 import com.google.android.material.button.MaterialButton;
 import com.nextcloud.android.common.ui.theme.utils.ColorRole;
+import com.nextcloud.common.NextcloudClient;
 import com.owncloud.android.R;
 import com.owncloud.android.databinding.NotificationListItemBinding;
-import com.owncloud.android.lib.common.OwnCloudClient;
 import com.owncloud.android.lib.resources.notifications.models.Action;
 import com.owncloud.android.lib.resources.notifications.models.Notification;
 import com.owncloud.android.lib.resources.notifications.models.RichObject;
@@ -82,11 +71,11 @@ public class NotificationListAdapter extends RecyclerView.Adapter<NotificationLi
     private final ForegroundColorSpan foregroundColorSpanBlack;
 
     private final List<Notification> notificationsList;
-    private final OwnCloudClient client;
+    private final NextcloudClient client;
     private final NotificationsActivity notificationsActivity;
     private final ViewThemeUtils viewThemeUtils;
 
-    public NotificationListAdapter(OwnCloudClient client,
+    public NotificationListAdapter(NextcloudClient client,
                                    NotificationsActivity notificationsActivity,
                                    ViewThemeUtils viewThemeUtils) {
         this.notificationsList = new ArrayList<>();
@@ -123,7 +112,8 @@ public class NotificationListAdapter extends RecyclerView.Adapter<NotificationLi
             subject = subject + " ↗";
             holder.binding.subject.setTypeface(holder.binding.subject.getTypeface(),
                                                Typeface.BOLD);
-            holder.binding.subject.setOnClickListener(v -> openLink(notification.getLink()));
+            holder.binding.subject.setOnClickListener(v -> DisplayUtils.startLinkIntent(notificationsActivity,
+                                                                                        notification.getLink()));
             holder.binding.subject.setText(subject);
         } else {
             if (!TextUtils.isEmpty(notification.subjectRich)) {
@@ -329,8 +319,7 @@ public class NotificationListAdapter extends RecyclerView.Adapter<NotificationLi
                 closingBrace = openingBrace + name.length();
 
                 ssb.setSpan(styleSpanBold, openingBrace, closingBrace, 0);
-                ssb.setSpan(foregroundColorSpanBlack, openingBrace, closingBrace,
-                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                ssb.setSpan(foregroundColorSpanBlack, openingBrace, closingBrace, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             openingBrace = text.indexOf('{', closingBrace);
         }
@@ -380,12 +369,6 @@ public class NotificationListAdapter extends RecyclerView.Adapter<NotificationLi
             .diskCacheStrategy(DiskCacheStrategy.SOURCE)
             .load(uri)
             .into(itemViewType);
-    }
-
-    private void openLink(String link) {
-        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(link));
-
-        DisplayUtils.startIntentIfAppAvailable(intent, notificationsActivity, R.string.no_browser_available);
     }
 
     @Override

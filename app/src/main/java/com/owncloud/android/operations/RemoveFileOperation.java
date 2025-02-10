@@ -1,25 +1,12 @@
 /*
- *   ownCloud Android client application
+ * Nextcloud - Android Client
  *
- *   @author David A. Velasco
- *   @author masensio
- *   @author Tobias Kaminsky
- *   Copyright (C) 2015 ownCloud Inc.
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License version 2,
- *   as published by the Free Software Foundation.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
+ * SPDX-FileCopyrightText: 2020 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2015 ownCloud Inc.
+ * SPDX-FileCopyrightText: 2015 María Asensio Valverde <masensio@solidgear.es>
+ * SPDX-FileCopyrightText: 2012 David A. Velasco <dvelasco@solidgear.es>
+ * SPDX-License-Identifier: GPL-2.0-only AND (AGPL-3.0-or-later OR GPL-2.0-only)
  */
-
 package com.owncloud.android.operations;
 
 import android.content.Context;
@@ -32,10 +19,10 @@ import com.owncloud.android.lib.common.OwnCloudClient;
 import com.owncloud.android.lib.common.operations.RemoteOperation;
 import com.owncloud.android.lib.common.operations.RemoteOperationResult;
 import com.owncloud.android.lib.common.operations.RemoteOperationResult.ResultCode;
+import com.owncloud.android.lib.common.utils.Log_OC;
 import com.owncloud.android.lib.resources.files.RemoveFileRemoteOperation;
 import com.owncloud.android.operations.common.SyncOperation;
 import com.owncloud.android.utils.MimeTypeUtil;
-
 
 /**
  * Remote operation performing the removal of a remote file or folder in the ownCloud server.
@@ -47,7 +34,6 @@ public class RemoveFileOperation extends SyncOperation {
     private final User user;
     private final boolean inBackground;
     private final Context context;
-
 
     /**
      * Constructor
@@ -69,7 +55,6 @@ public class RemoveFileOperation extends SyncOperation {
         this.inBackground = inBackground;
         this.context = context;
     }
-
 
     /**
      * Getter for the file to remove (or removed, if the operation was successfully performed).
@@ -102,12 +87,17 @@ public class RemoveFileOperation extends SyncOperation {
         boolean localRemovalFailed = false;
         if (!onlyLocalCopy) {
             if (fileToRemove.isEncrypted()) {
-                OCFile parent = getStorageManager().getFileByPath(fileToRemove.getParentRemotePath());
+                OCFile parent = getStorageManager().getFileById(fileToRemove.getParentId());
+                if (parent == null) {
+                    return new RemoteOperationResult(ResultCode.LOCAL_FILE_NOT_FOUND);
+                }
+
                 operation = new RemoveRemoteEncryptedFileOperation(fileToRemove.getRemotePath(),
-                                                                   parent.getLocalId(),
                                                                    user,
                                                                    context,
-                                                                   fileToRemove.getEncryptedFileName());
+                                                                   fileToRemove.getEncryptedFileName(),
+                                                                   parent,
+                                                                   fileToRemove.isFolder());
             } else {
                 operation = new RemoveFileRemoteOperation(fileToRemove.getRemotePath());
             }

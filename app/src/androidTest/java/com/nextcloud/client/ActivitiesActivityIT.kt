@@ -1,31 +1,22 @@
 /*
+ * Nextcloud - Android Client
  *
- * Nextcloud Android client application
- *
- * @author Tobias Kaminsky
- * Copyright (C) 2020 Tobias Kaminsky
- * Copyright (C) 2020 Nextcloud GmbH
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2020 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2020 Nextcloud GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
 package com.nextcloud.client
 
-import androidx.test.espresso.Espresso
+import android.view.View
+import androidx.annotation.UiThread
+import androidx.test.core.app.launchActivity
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.IdlingRegistry
+import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.contrib.DrawerActions
-import androidx.test.espresso.intent.rule.IntentsTestRule
+import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.isRoot
 import androidx.test.espresso.matcher.ViewMatchers.withId
-import com.facebook.testing.screenshot.Screenshot
 import com.owncloud.android.AbstractIT
 import com.owncloud.android.R
 import com.owncloud.android.lib.resources.activities.model.Activity
@@ -34,69 +25,94 @@ import com.owncloud.android.lib.resources.activities.model.RichObject
 import com.owncloud.android.lib.resources.activities.models.PreviewObject
 import com.owncloud.android.lib.resources.status.OCCapability
 import com.owncloud.android.ui.activities.ActivitiesActivity
+import com.owncloud.android.utils.EspressoIdlingResource
 import com.owncloud.android.utils.ScreenshotTest
-import org.junit.Rule
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import java.util.GregorianCalendar
 
 class ActivitiesActivityIT : AbstractIT() {
-    @get:Rule
-    var activityRule = IntentsTestRule(ActivitiesActivity::class.java, true, false)
+    private val testClassName = "com.nextcloud.client.ActivitiesActivityIT"
+
+    @Before
+    fun registerIdlingResource() {
+        IdlingRegistry.getInstance().register(EspressoIdlingResource.countingIdlingResource)
+    }
+
+    @After
+    fun unregisterIdlingResource() {
+        IdlingRegistry.getInstance().unregister(EspressoIdlingResource.countingIdlingResource)
+    }
 
     @Test
+    @UiThread
     @ScreenshotTest
     fun openDrawer() {
-        val sut = activityRule.launchActivity(null)
-        shortSleep()
-        Espresso.onView(withId(R.id.drawer_layout)).perform(DrawerActions.open())
-        sut.runOnUiThread {
-            sut.dismissSnackbar()
+        launchActivity<ActivitiesActivity>().use { scenario ->
+            scenario.onActivity { sut ->
+                onIdleSync {
+                    EspressoIdlingResource.increment()
+                    onView(withId(R.id.drawer_layout)).perform(DrawerActions.open())
+                    sut.dismissSnackbar()
+                    EspressoIdlingResource.decrement()
+                    val screenShotName = createName(testClassName + "_" + "openDrawer", "")
+                    onView(isRoot()).check(matches(isDisplayed()))
+                    screenshotViaName(sut, screenShotName)
+                }
+            }
         }
-        shortSleep()
-        waitForIdleSync()
-        screenshot(sut)
     }
 
     @Test
+    @UiThread
     @ScreenshotTest
     fun loading() {
-        val sut: ActivitiesActivity = activityRule.launchActivity(null)
-        sut.runOnUiThread {
-            sut.dismissSnackbar()
+        launchActivity<ActivitiesActivity>().use { scenario ->
+            scenario.onActivity { sut ->
+                onIdleSync {
+                    EspressoIdlingResource.increment()
+                    sut.dismissSnackbar()
+                    sut.binding.emptyList.root.visibility = View.GONE
+                    sut.binding.swipeContainingList.visibility = View.GONE
+                    sut.binding.loadingContent.visibility = View.VISIBLE
+                    EspressoIdlingResource.decrement()
+                    val screenShotName = createName(testClassName + "_" + "loading", "")
+                    onView(isRoot()).check(matches(isDisplayed()))
+                    screenshotViaName(sut, screenShotName)
+                }
+            }
         }
-
-        shortSleep()
-        waitForIdleSync()
-
-        Screenshot.snapActivity(sut).record()
     }
 
     @Test
+    @UiThread
     @ScreenshotTest
     fun empty() {
-        val sut: ActivitiesActivity = activityRule.launchActivity(null)
-
-        sut.runOnUiThread {
-            sut.showActivities(mutableListOf(), nextcloudClient, -1)
-            sut.setProgressIndicatorState(false)
-            sut.dismissSnackbar()
+        launchActivity<ActivitiesActivity>().use { scenario ->
+            scenario.onActivity { sut ->
+                onIdleSync {
+                    EspressoIdlingResource.increment()
+                    sut.showActivities(mutableListOf(), nextcloudClient, -1)
+                    sut.setProgressIndicatorState(false)
+                    sut.dismissSnackbar()
+                    EspressoIdlingResource.decrement()
+                    val screenShotName = createName(testClassName + "_" + "empty", "")
+                    onView(isRoot()).check(matches(isDisplayed()))
+                    screenshotViaName(sut, screenShotName)
+                }
+            }
         }
-
-        shortSleep()
-        waitForIdleSync()
-
-        screenshot(sut)
     }
 
     @Test
+    @UiThread
     @ScreenshotTest
     @SuppressWarnings("MagicNumber")
     fun showActivities() {
         val capability = OCCapability()
         capability.versionMayor = 20
         fileDataStorageManager.saveCapabilities(capability)
-
-        val sut: ActivitiesActivity = activityRule.launchActivity(null)
 
         val date = GregorianCalendar()
         date.set(2005, 4, 17, 10, 35, 30) // random date
@@ -145,7 +161,7 @@ class ActivitiesActivityIT : AbstractIT() {
                 "calendar",
                 "35",
                 "",
-                ArrayList<PreviewObject>(),
+                ArrayList(),
                 RichElement()
             ),
             Activity(
@@ -168,35 +184,39 @@ class ActivitiesActivityIT : AbstractIT() {
             )
         )
 
-        sut.runOnUiThread {
-            sut.showActivities(activities as List<Any>?, nextcloudClient, -1)
-            sut.setProgressIndicatorState(false)
-            sut.dismissSnackbar()
+        launchActivity<ActivitiesActivity>().use { scenario ->
+            scenario.onActivity { sut ->
+                onIdleSync {
+                    EspressoIdlingResource.increment()
+                    sut.showActivities(activities as List<Any>?, nextcloudClient, -1)
+                    sut.setProgressIndicatorState(false)
+                    sut.dismissSnackbar()
+                    EspressoIdlingResource.decrement()
+                    val screenShotName = createName(testClassName + "_" + "showActivities", "")
+                    onView(isRoot()).check(matches(isDisplayed()))
+                    screenshotViaName(sut, screenShotName)
+                }
+            }
         }
-
-        shortSleep()
-        waitForIdleSync()
-
-        screenshot(sut)
     }
 
     @Test
+    @UiThread
     @ScreenshotTest
     fun error() {
-        val sut: ActivitiesActivity = activityRule.launchActivity(null)
-
-        shortSleep()
-
-        sut.runOnUiThread {
-            sut.showEmptyContent("Error", "Error! Please try again later!")
-            sut.setProgressIndicatorState(false)
-            sut.dismissSnackbar()
+        launchActivity<ActivitiesActivity>().use { scenario ->
+            scenario.onActivity { sut ->
+                onIdleSync {
+                    EspressoIdlingResource.increment()
+                    sut.showEmptyContent("Error", "Error! Please try again later!")
+                    sut.setProgressIndicatorState(false)
+                    sut.dismissSnackbar()
+                    EspressoIdlingResource.decrement()
+                    val screenShotName = createName(testClassName + "_" + "error", "")
+                    onView(isRoot()).check(matches(isDisplayed()))
+                    screenshotViaName(sut, screenShotName)
+                }
+            }
         }
-
-        shortSleep()
-        shortSleep()
-        waitForIdleSync()
-
-        screenshot(sut)
     }
 }

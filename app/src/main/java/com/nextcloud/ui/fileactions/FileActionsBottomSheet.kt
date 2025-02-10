@@ -1,25 +1,10 @@
 /*
- * Nextcloud Android client application
+ * Nextcloud - Android Client
  *
- *  @author Álvaro Brey
- *  Copyright (C) 2022 Álvaro Brey
- *  Copyright (C) 2022 Nextcloud GmbH
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU AFFERO GENERAL PUBLIC LICENSE
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU AFFERO GENERAL PUBLIC LICENSE for more details.
- *
- * You should have received a copy of the GNU Affero General Public
- * License along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
+ * SPDX-FileCopyrightText: 2022 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2022 Nextcloud GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
-
 package com.nextcloud.ui.fileactions
 
 import android.content.Context
@@ -41,6 +26,8 @@ import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.setFragmentResult
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModelProvider
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.nextcloud.android.common.ui.theme.utils.ColorRole
 import com.nextcloud.client.account.CurrentAccountProvider
@@ -77,17 +64,17 @@ class FileActionsBottomSheet : BottomSheetDialogFragment(), Injectable {
     @Inject
     lateinit var syncedFolderProvider: SyncedFolderProvider
 
-    lateinit var viewModel: FileActionsViewModel
+    private lateinit var viewModel: FileActionsViewModel
 
     private var _binding: FileActionsBottomSheetBinding? = null
-    private val binding
+    val binding
         get() = _binding!!
 
-    lateinit var componentsGetter: ComponentsGetter
+    private lateinit var componentsGetter: ComponentsGetter
 
     private val thumbnailAsyncTasks = mutableListOf<ThumbnailsCacheManager.ThumbnailGenerationTask>()
 
-    interface ResultListener {
+    fun interface ResultListener {
         fun onResult(@IdRes actionId: Int)
     }
 
@@ -103,12 +90,16 @@ class FileActionsBottomSheet : BottomSheetDialogFragment(), Injectable {
 
         viewModel.load(requireArguments(), componentsGetter)
 
+        val bottomSheetDialog = dialog as BottomSheetDialog
+        bottomSheetDialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
+        bottomSheetDialog.behavior.skipCollapsed = true
+
+        viewThemeUtils.platform.colorViewBackground(binding.bottomSheet, ColorRole.SURFACE)
+
         return binding.root
     }
 
-    private fun handleState(
-        state: FileActionsViewModel.UiState
-    ) {
+    private fun handleState(state: FileActionsViewModel.UiState) {
         toggleLoadingOrContent(state)
         when (state) {
             is FileActionsViewModel.UiState.LoadedForSingleFile -> {
@@ -119,11 +110,13 @@ class FileActionsBottomSheet : BottomSheetDialogFragment(), Injectable {
                 displayActions(state.actions)
                 displayTitle(state.titleFile)
             }
+
             is FileActionsViewModel.UiState.LoadedForMultipleFiles -> {
                 setMultipleFilesThumbnail()
                 displayActions(state.actions)
                 displayTitle(state.fileCount)
             }
+
             FileActionsViewModel.UiState.Loading -> {}
             FileActionsViewModel.UiState.Error -> {
                 context?.let {
@@ -145,7 +138,7 @@ class FileActionsBottomSheet : BottomSheetDialogFragment(), Injectable {
                 false,
                 context,
                 binding.thumbnailLayout.thumbnailShimmer,
-                null,
+                syncedFolderProvider.preferences,
                 viewThemeUtils,
                 syncedFolderProvider
             )
@@ -189,17 +182,15 @@ class FileActionsBottomSheet : BottomSheetDialogFragment(), Injectable {
     private fun toggleLoadingOrContent(state: FileActionsViewModel.UiState) {
         if (state is FileActionsViewModel.UiState.Loading) {
             binding.bottomSheetLoading.isVisible = true
-            binding.bottomSheetContent.isVisible = false
+            binding.bottomSheetHeader.isVisible = false
             viewThemeUtils.platform.colorCircularProgressBar(binding.bottomSheetLoading, ColorRole.PRIMARY)
         } else {
             binding.bottomSheetLoading.isVisible = false
-            binding.bottomSheetContent.isVisible = true
+            binding.bottomSheetHeader.isVisible = true
         }
     }
 
-    private fun displayActions(
-        actions: List<FileAction>
-    ) {
+    private fun displayActions(actions: List<FileAction>) {
         if (binding.fileActionsList.isEmpty()) {
             actions.forEach { action ->
                 val view = inflateActionView(action)
@@ -318,7 +309,7 @@ class FileActionsBottomSheet : BottomSheetDialogFragment(), Injectable {
             @IdRes
             additionalToHide: List<Int>? = null
         ): FileActionsBottomSheet {
-            return newInstance(1, listOf(file), isOverflow, additionalToHide)
+            return newInstance(1, listOf(file), isOverflow, additionalToHide, true)
         }
 
         @JvmStatic
@@ -328,13 +319,15 @@ class FileActionsBottomSheet : BottomSheetDialogFragment(), Injectable {
             files: Collection<OCFile>,
             isOverflow: Boolean,
             @IdRes
-            additionalToHide: List<Int>? = null
+            additionalToHide: List<Int>? = null,
+            inSingleFileFragment: Boolean = false
         ): FileActionsBottomSheet {
             return FileActionsBottomSheet().apply {
                 val argsBundle = bundleOf(
                     FileActionsViewModel.ARG_ALL_FILES_COUNT to numberOfAllFiles,
                     FileActionsViewModel.ARG_FILES to ArrayList<OCFile>(files),
-                    FileActionsViewModel.ARG_IS_OVERFLOW to isOverflow
+                    FileActionsViewModel.ARG_IS_OVERFLOW to isOverflow,
+                    FileActionsViewModel.ARG_IN_SINGLE_FILE_FRAGMENT to inSingleFileFragment
                 )
                 additionalToHide?.let {
                     argsBundle.putIntArray(FileActionsViewModel.ARG_ADDITIONAL_FILTER, additionalToHide.toIntArray())

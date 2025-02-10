@@ -1,7 +1,16 @@
+/*
+ * Nextcloud - Android Client
+ *
+ * SPDX-FileCopyrightText: 2016-2024 Nextcloud GmbH and Nextcloud contributors
+ * SPDX-FileCopyrightText: 2024 TSI-mc <surinder.kumar@t-systems.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
+ */
 package com.owncloud.android.ui.activity;
 
 import android.accounts.Account;
 import android.content.Intent;
+import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 
 import com.nextcloud.client.account.User;
@@ -11,14 +20,18 @@ import com.nextcloud.client.mixins.MixinRegistry;
 import com.nextcloud.client.mixins.SessionMixin;
 import com.nextcloud.client.preferences.AppPreferences;
 import com.nextcloud.client.preferences.DarkMode;
-import com.nextcloud.java.util.Optional;
+import com.nextcloud.utils.extensions.WindowExtensionsKt;
 import com.owncloud.android.datamodel.FileDataStorageManager;
 import com.owncloud.android.datamodel.OCFile;
 import com.owncloud.android.lib.common.utils.Log_OC;
 import com.owncloud.android.lib.resources.status.OCCapability;
 
+import java.util.Optional;
+
 import javax.inject.Inject;
 
+import androidx.activity.EdgeToEdge;
+import androidx.activity.SystemBarStyle;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -36,13 +49,14 @@ public abstract class BaseActivity extends AppCompatActivity implements Injectab
     private boolean paused;
     protected boolean enableAccountHandling = true;
 
-    private MixinRegistry mixinRegistry = new MixinRegistry();
+    private final MixinRegistry mixinRegistry = new MixinRegistry();
     private SessionMixin sessionMixin;
 
     @Inject UserAccountManager accountManager;
     @Inject AppPreferences preferences;
+    @Inject FileDataStorageManager fileDataStorageManager;
 
-    private AppPreferences.Listener onPreferencesChanged = new AppPreferences.Listener() {
+    private final AppPreferences.Listener onPreferencesChanged = new AppPreferences.Listener() {
         @Override
         public void onDarkThemeModeChanged(DarkMode mode) {
             onThemeSettingsModeChanged();
@@ -55,15 +69,25 @@ public abstract class BaseActivity extends AppCompatActivity implements Injectab
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
+        boolean isApiLevel35OrHigher = (Build.VERSION.SDK_INT >= 35);
+
+        if (isApiLevel35OrHigher) {
+            enableEdgeToEdge();
+            WindowExtensionsKt.addSystemBarPaddings(getWindow());
+        }
+
         super.onCreate(savedInstanceState);
-        sessionMixin = new SessionMixin(this,
-                                        getContentResolver(),
-                                        accountManager);
+        sessionMixin = new SessionMixin(this, accountManager);
         mixinRegistry.add(sessionMixin);
 
         if (enableAccountHandling) {
             mixinRegistry.onCreate(savedInstanceState);
         }
+    }
+
+    private void enableEdgeToEdge() {
+        final var style = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT);
+        EdgeToEdge.enable(this, style, style);
     }
 
     @Override
@@ -109,7 +133,9 @@ public abstract class BaseActivity extends AppCompatActivity implements Injectab
     protected void onRestart() {
         Log_OC.v(TAG, "onRestart() start");
         super.onRestart();
-        mixinRegistry.onRestart();
+        if (enableAccountHandling) {
+            mixinRegistry.onRestart();
+        }
     }
 
     private void onThemeSettingsModeChanged() {
@@ -137,9 +163,6 @@ public abstract class BaseActivity extends AppCompatActivity implements Injectab
         sessionMixin.setUser(user);
     }
 
-    /**
-     * Launches the account creation activity.
-     */
     protected void startAccountCreation() {
         sessionMixin.startAccountCreation();
     }
@@ -170,6 +193,6 @@ public abstract class BaseActivity extends AppCompatActivity implements Injectab
     }
 
     public FileDataStorageManager getStorageManager() {
-        return sessionMixin.getStorageManager();
+        return fileDataStorageManager;
     }
 }

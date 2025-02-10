@@ -1,37 +1,23 @@
 /*
+ * Nextcloud - Android Client
  *
- * Nextcloud Android client application
- *
- * @author Tobias Kaminsky
- * Copyright (C) 2023 Tobias Kaminsky
- * Copyright (C) 2023 Nextcloud GmbH
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2023 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2023 Nextcloud GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
-
 package com.owncloud.android.ui.adapter
 
 import android.content.Context
+import android.graphics.drawable.LayerDrawable
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.appcompat.content.res.AppCompatResources
 import androidx.recyclerview.widget.RecyclerView
 import com.nextcloud.android.lib.resources.groupfolders.Groupfolder
 import com.owncloud.android.R
 import com.owncloud.android.databinding.ListItemBinding
 import com.owncloud.android.ui.interfaces.GroupfolderListInterface
+import com.owncloud.android.utils.MimeTypeUtil
 import com.owncloud.android.utils.theme.ViewThemeUtils
 import java.io.File
 
@@ -43,16 +29,13 @@ class GroupfolderListAdapter(
     RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     lateinit var list: List<Groupfolder>
 
-    private val folderIcon = viewThemeUtils.platform.tintPrimaryDrawable(
-        context,
-        AppCompatResources.getDrawable(
-            context,
-            R.drawable.folder_group
-        )
-    )
-
     fun setData(result: Map<String, Groupfolder>) {
         list = result.values.sortedBy { it.mountPoint }
+    }
+
+    private fun getFolderIcon(): LayerDrawable? {
+        val overlayDrawableId = R.drawable.ic_folder_overlay_account_group
+        return MimeTypeUtil.getFolderIcon(false, overlayDrawableId, context, viewThemeUtils)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -82,7 +65,7 @@ class GroupfolderListAdapter(
             localFileIndicator.visibility = View.GONE
             favorite.visibility = View.GONE
 
-            thumbnail.setImageDrawable(folderIcon)
+            thumbnail.setImageDrawable(getFolderIcon())
 
             itemLayout.setOnClickListener { groupfolderListInterface.onFolderClick(groupfolder.mountPoint) }
         }

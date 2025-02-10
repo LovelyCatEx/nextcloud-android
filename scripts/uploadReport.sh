@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 
+# SPDX-FileCopyrightText: 2018-2024 Nextcloud GmbH and Nextcloud contributors
+# SPDX-FileCopyrightText: 2018-2022 Tobias Kaminsky <tobias@kaminsky.me>
+# SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
+
 upload() {
     scripts/deleteOldComments.sh "$BRANCH" "$TYPE" "$PR"
 
     cd $1
+    pwd
+    find . -type d
+    find . -type f
 
     find . -type d -exec curl > /dev/null 2>&1 -u $USER:$PASS -X MKCOL $URL/$REMOTE_FOLDER/$(echo {} | sed s#\./##) \;
     find . -type f -exec curl > /dev/null 2>&1 -u $USER:$PASS -X PUT $URL/$REMOTE_FOLDER/$(echo {} | sed s#\./##) --upload-file {} \;
@@ -23,7 +30,6 @@ upload() {
 #5: TYPE (IT or Unit)
 #6: DRONE_PULL_REQUEST
 
-URL=https://nextcloud.kaminsky.me/remote.php/webdav/android-integrationTests
 ID=$3
 USER=$1
 PASS=$2
@@ -35,6 +41,7 @@ source scripts/lib.sh
 
 REMOTE_FOLDER=$ID-$TYPE-$BRANCH-$(date +%H-%M)
 BRANCH_TYPE=$BRANCH-$TYPE
+URL=https://nextcloud.kaminsky.me/remote.php/dav/files/$USER/android-integrationTests
 
 set -e
 

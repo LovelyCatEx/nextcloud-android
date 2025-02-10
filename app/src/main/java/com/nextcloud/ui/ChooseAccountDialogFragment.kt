@@ -4,20 +4,8 @@
  * @author Infomaniak Network SA
  * Copyright (C) 2020 Infomaniak Network SA
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU AFFERO GENERAL PUBLIC LICENSE
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU AFFERO GENERAL PUBLIC LICENSE for more details.
- *
- * You should have received a copy of the GNU Affero General Public
- * License along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
-
 package com.nextcloud.ui
 
 import android.annotation.SuppressLint
@@ -30,11 +18,14 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import androidx.fragment.app.DialogFragment
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.nextcloud.client.account.User
 import com.nextcloud.client.account.UserAccountManager
 import com.nextcloud.client.di.Injectable
 import com.nextcloud.client.network.ClientFactory
+import com.nextcloud.utils.extensions.getParcelableArgument
+import com.nextcloud.utils.mdm.MDMConfig
 import com.owncloud.android.R
 import com.owncloud.android.databinding.DialogChooseAccountBinding
 import com.owncloud.android.datamodel.FileDataStorageManager
@@ -44,10 +35,10 @@ import com.owncloud.android.ui.activity.BaseActivity
 import com.owncloud.android.ui.activity.DrawerActivity
 import com.owncloud.android.ui.adapter.UserListAdapter
 import com.owncloud.android.ui.adapter.UserListItem
-import com.owncloud.android.ui.asynctasks.RetrieveStatusAsyncTask
 import com.owncloud.android.utils.DisplayUtils
 import com.owncloud.android.utils.DisplayUtils.AvatarGenerationListener
 import com.owncloud.android.utils.theme.ViewThemeUtils
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 private const val ARG_CURRENT_USER_PARAM = "currentUser"
@@ -65,7 +56,7 @@ class ChooseAccountDialogFragment :
     private var currentStatus: Status? = null
 
     private var _binding: DialogChooseAccountBinding? = null
-    private val binding get() = _binding!!
+    val binding get() = _binding!!
 
     @Inject
     lateinit var clientFactory: ClientFactory
@@ -76,7 +67,7 @@ class ChooseAccountDialogFragment :
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         arguments?.let {
-            currentUser = it.getParcelable(ARG_CURRENT_USER_PARAM)
+            currentUser = it.getParcelableArgument(ARG_CURRENT_USER_PARAM, User::class.java)
         }
     }
 
@@ -130,6 +121,10 @@ class ChooseAccountDialogFragment :
                 viewThemeUtils
             )
 
+            if (!MDMConfig.multiAccountSupport(requireContext())) {
+                binding.addAccount.visibility = View.GONE
+            }
+
             binding.accountsList.adapter = adapter
 
             // Creating listeners for quick-actions
@@ -157,10 +152,21 @@ class ChooseAccountDialogFragment :
                 binding.statusView.visibility = View.VISIBLE
             }
 
-            RetrieveStatusAsyncTask(user, this, clientFactory).execute()
+            loadAndSetUserStatus(user)
         }
 
         themeViews()
+    }
+
+    private fun loadAndSetUserStatus(user: User) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val status = retrieveUserStatus(user, clientFactory)
+
+            if (isAdded && !isDetached) {
+                val context = requireContext()
+                setStatus(status, context)
+            }
+        }
     }
 
     private fun themeViews() {
@@ -192,12 +198,11 @@ class ChooseAccountDialogFragment :
      */
     companion object {
         @JvmStatic
-        fun newInstance(user: User) =
-            ChooseAccountDialogFragment().apply {
-                arguments = Bundle().apply {
-                    putParcelable(ARG_CURRENT_USER_PARAM, user)
-                }
+        fun newInstance(user: User) = ChooseAccountDialogFragment().apply {
+            arguments = Bundle().apply {
+                putParcelable(ARG_CURRENT_USER_PARAM, user)
             }
+        }
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -232,7 +237,7 @@ class ChooseAccountDialogFragment :
 
         binding.currentAccount.status.let {
             if (newStatus.message.isNullOrBlank()) {
-                it.text = ""
+                it.text = getString(R.string.empty)
                 it.visibility = View.GONE
             } else {
                 it.text = newStatus.message

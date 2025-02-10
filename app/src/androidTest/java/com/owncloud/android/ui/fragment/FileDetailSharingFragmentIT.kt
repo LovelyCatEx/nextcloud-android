@@ -1,25 +1,10 @@
 /*
+ * Nextcloud - Android Client
  *
- * Nextcloud Android client application
- *
- * @author Tobias Kaminsky
- * @author TSI-mc
- * Copyright (C) 2020 Tobias Kaminsky
- * Copyright (C) 2020 Nextcloud GmbH
- * Copyright (C) 2021 TSI-mc
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2020 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2020 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-FileCopyrightText: 2021 TSI-mc
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
 package com.owncloud.android.ui.fragment
 
@@ -37,6 +22,7 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import com.google.android.apps.common.testing.accessibility.framework.AccessibilityCheckResultBaseUtils.matchesCheckNames
 import com.google.android.apps.common.testing.accessibility.framework.AccessibilityCheckResultUtils.matchesViews
 import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.nextcloud.android.lib.resources.files.FileDownloadLimit
 import com.nextcloud.test.RetryTestRule
 import com.nextcloud.test.TestActivity
 import com.owncloud.android.AbstractIT
@@ -84,6 +70,7 @@ class FileDetailSharingFragmentIT : AbstractIT() {
             remoteId = "00000001"
             parentId = activity.storageManager.getFileByEncryptedRemotePath("/").fileId
             permissions = OCFile.PERMISSION_CAN_RESHARE
+            fileDataStorageManager.saveFile(this)
         }
 
         folder = OCFile("/test").apply {
@@ -103,6 +90,51 @@ class FileDetailSharingFragmentIT : AbstractIT() {
     @ScreenshotTest
     fun listSharesFileResharingNotAllowed() {
         file.permissions = ""
+
+        show(file)
+    }
+
+    @Test
+    @ScreenshotTest
+    fun listSharesDownloadLimit() {
+        OCShare(file.decryptedRemotePath).apply {
+            remoteId = 1
+            shareType = ShareType.PUBLIC_LINK
+            token = "AAAAAAAAAAAAAAA"
+            activity.storageManager.saveShare(this)
+        }
+
+        OCShare(file.decryptedRemotePath).apply {
+            remoteId = 2
+            shareType = ShareType.PUBLIC_LINK
+            token = "BBBBBBBBBBBBBBB"
+            fileDownloadLimit = FileDownloadLimit("BBBBBBBBBBBBBBB", 0, 0)
+            activity.storageManager.saveShare(this)
+        }
+
+        OCShare(file.decryptedRemotePath).apply {
+            remoteId = 3
+            shareType = ShareType.PUBLIC_LINK
+            token = "CCCCCCCCCCCCCCC"
+            fileDownloadLimit = FileDownloadLimit("CCCCCCCCCCCCCCC", 10, 0)
+            activity.storageManager.saveShare(this)
+        }
+
+        OCShare(file.decryptedRemotePath).apply {
+            remoteId = 4
+            shareType = ShareType.PUBLIC_LINK
+            token = "DDDDDDDDDDDDDDD"
+            fileDownloadLimit = FileDownloadLimit("DDDDDDDDDDDDDDD", 10, 5)
+            activity.storageManager.saveShare(this)
+        }
+
+        OCShare(file.decryptedRemotePath).apply {
+            remoteId = 5
+            shareType = ShareType.PUBLIC_LINK
+            token = "FFFFFFFFFFFFFFF"
+            fileDownloadLimit = FileDownloadLimit("FFFFFFFFFFFFFFF", 10, 10)
+            activity.storageManager.saveShare(this)
+        }
 
         show(file)
     }
@@ -166,7 +198,7 @@ class FileDetailSharingFragmentIT : AbstractIT() {
         OCShare(file.decryptedRemotePath).apply {
             remoteId = 7
             shareType = ShareType.CIRCLE
-            sharedWithDisplayName = "Personal circle"
+            sharedWithDisplayName = "Personal team"
             permissions = SHARE_PERMISSION_FLAG
             userId = getUserId(user)
             activity.storageManager.saveShare(this)
@@ -175,7 +207,7 @@ class FileDetailSharingFragmentIT : AbstractIT() {
         OCShare(file.decryptedRemotePath).apply {
             remoteId = 8
             shareType = ShareType.CIRCLE
-            sharedWithDisplayName = "Public circle"
+            sharedWithDisplayName = "Public team"
             permissions = SHARE_PERMISSION_FLAG
             userId = getUserId(user)
             activity.storageManager.saveShare(this)
@@ -184,7 +216,7 @@ class FileDetailSharingFragmentIT : AbstractIT() {
         OCShare(file.decryptedRemotePath).apply {
             remoteId = 9
             shareType = ShareType.CIRCLE
-            sharedWithDisplayName = "Closed circle"
+            sharedWithDisplayName = "Closed team"
             permissions = SHARE_PERMISSION_FLAG
             userId = getUserId(user)
             activity.storageManager.saveShare(this)
@@ -193,7 +225,7 @@ class FileDetailSharingFragmentIT : AbstractIT() {
         OCShare(file.decryptedRemotePath).apply {
             remoteId = 10
             shareType = ShareType.CIRCLE
-            sharedWithDisplayName = "Secret circle"
+            sharedWithDisplayName = "Secret team"
             permissions = SHARE_PERMISSION_FLAG
             userId = getUserId(user)
             activity.storageManager.saveShare(this)
@@ -686,10 +718,7 @@ class FileDetailSharingFragmentIT : AbstractIT() {
     }
 
     // open bottom sheet with actions
-    private fun openAdvancedPermissions(
-        sut: FileDetailSharingFragment,
-        userShare: OCShare
-    ) {
+    private fun openAdvancedPermissions(sut: FileDetailSharingFragment, userShare: OCShare) {
         activity.handler.post {
             sut.showSharingMenuActionSheet(userShare)
         }
@@ -737,10 +766,7 @@ class FileDetailSharingFragmentIT : AbstractIT() {
     /**
      * verify send new email note text
      */
-    private fun verifySendNewEmail(
-        sut: FileDetailSharingFragment,
-        userShare: OCShare
-    ) {
+    private fun verifySendNewEmail(sut: FileDetailSharingFragment, userShare: OCShare) {
         activity.runOnUiThread { sut.showSharingMenuActionSheet(userShare) }
 
         waitForIdleSync()

@@ -1,26 +1,14 @@
 /*
- *   ownCloud Android client application
+ * Nextcloud - Android Client
  *
- *   @author Tobias Kaminsky
- *   @author David A. Velasco
- *   @author Chris Narkiewicz
- *   Copyright (C) 2015 ownCloud Inc.
- *   Copyright (C) 2019 Chris Narkiewicz <hello@ezaquarii.com>
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License version 2,
- *   as published by the Free Software Foundation.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
+ * SPDX-FileCopyrightText: 2022-2023 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2017-2020 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2016-2020 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-FileCopyrightText: 2019 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-FileCopyrightText: 2015 ownCloud Inc.
+ * SPDX-FileCopyrightText: 2014 David A. Velasco <dvelasco@solidgear.es>
+ * SPDX-License-Identifier: GPL-2.0-only AND (AGPL-3.0-or-later OR GPL-2.0-only)
  */
-
 package com.owncloud.android.datamodel;
 
 import android.content.Context;
@@ -55,6 +43,7 @@ import com.owncloud.android.lib.common.OwnCloudClient;
 import com.owncloud.android.lib.common.OwnCloudClientManagerFactory;
 import com.owncloud.android.lib.common.operations.RemoteOperation;
 import com.owncloud.android.lib.common.utils.Log_OC;
+import com.owncloud.android.lib.resources.files.model.ImageDimension;
 import com.owncloud.android.lib.resources.files.model.ServerFileInterface;
 import com.owncloud.android.lib.resources.trashbin.model.TrashbinFile;
 import com.owncloud.android.ui.TextDrawable;
@@ -76,12 +65,12 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.ref.WeakReference;
-import java.net.URLEncoder;
 import java.util.List;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
+import androidx.core.content.ContextCompat;
 import androidx.core.content.res.ResourcesCompat;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -203,7 +192,10 @@ public final class ThumbnailsCacheManager {
         thumbnail = BitmapUtils.rotateImage(thumbnail,path);
 
         // Add thumbnail to cache
-        addBitmapToCache(imageKey, thumbnail);
+        // do not overwrite any pre-existing image
+        if (!mThumbnailCache.containsKey(imageKey)) {
+            addBitmapToCache(imageKey, thumbnail);
+        }
 
         return thumbnail;
     }
@@ -254,24 +246,6 @@ public final class ThumbnailsCacheManager {
         return null;
     }
 
-    public static class GalleryImageGenerationTaskObject {
-        private final OCFile file;
-        private final String imageKey;
-
-        public GalleryImageGenerationTaskObject(OCFile file, String imageKey) {
-            this.file = file;
-            this.imageKey = imageKey;
-        }
-
-        private OCFile getFile() {
-            return file;
-        }
-
-        private String getImageKey() {
-            return imageKey;
-        }
-    }
-
     public static class GalleryImageGenerationTask extends AsyncTask<Object, Void, Bitmap> {
         private final User user;
         private final FileDataStorageManager storageManager;
@@ -311,56 +285,68 @@ public final class ThumbnailsCacheManager {
         protected Bitmap doInBackground(Object... params) {
             Bitmap thumbnail;
 
-            file = (OCFile) params[0];
-
-
-            if (file.getRemoteId() != null && file.isPreviewAvailable()) {
-                // Thumbnail in cache?
-                thumbnail = ThumbnailsCacheManager.getBitmapFromDiskCache(
-                    ThumbnailsCacheManager.PREFIX_RESIZED_IMAGE + file.getRemoteId()
-                                                                         );
-
-                if (thumbnail != null && !file.isUpdateThumbnailNeeded()) {
-                    Float size = (float) ThumbnailsCacheManager.getThumbnailDimension();
-
-                    // resized dimensions
-                    ImageDimension imageDimension = file.getImageDimension();
-                    if (imageDimension == null ||
-                        imageDimension.getWidth() != size ||
-                        imageDimension.getHeight() != size) {
-                        file.setImageDimension(new ImageDimension(thumbnail.getWidth(), thumbnail.getHeight()));
-                        storageManager.saveFile(file);
-                    }
-
-                    if (MimeTypeUtil.isVideo(file)) {
-                        return ThumbnailsCacheManager.addVideoOverlay(thumbnail, MainApp.getAppContext());
-                    } else {
-                        return thumbnail;
-                    }
-                } else {
-                    try {
-                        mClient = OwnCloudClientManagerFactory.getDefaultSingleton().getClientFor(user.toOwnCloudAccount(),
-                                                                                                  MainApp.getAppContext());
-
-                        thumbnail = doResizedImageInBackground(file, storageManager);
-                        newImage = true;
-
-                        if (MimeTypeUtil.isVideo(file) && thumbnail != null) {
-                            thumbnail = addVideoOverlay(thumbnail, MainApp.getAppContext());
-                        }
-
-                    } catch (OutOfMemoryError oome) {
-                        Log_OC.e(TAG, "Out of memory");
-                    } catch (Throwable t) {
-                        // the app should never break due to a problem with thumbnails
-                        Log_OC.e(TAG, "Generation of gallery image for " + file + " failed", t);
-                    }
-
-                    return thumbnail;
-                }
+            if (params == null || params.length == 0 || !(params[0] instanceof OCFile)) {
+                Log_OC.d(TAG, "Downloaded file is null or is not an instance of OCFile");
+                return null;
             }
 
+            file = (OCFile) params[0];
+
+            if (file.getRemoteId() != null || file.isPreviewAvailable()) {
+                // Thumbnail in cache?
+                thumbnail = ThumbnailsCacheManager.getBitmapFromDiskCache(
+                    ThumbnailsCacheManager.PREFIX_RESIZED_IMAGE + file.getRemoteId());
+
+                if (thumbnail != null && !file.isUpdateThumbnailNeeded())
+                    return getThumbnailFromCache(thumbnail);
+
+                return getThumbnailFromServerAndAddToCache(thumbnail);
+            }
+
+            Log_OC.d(TAG, "File cannot be previewed");
             return null;
+        }
+
+        @Nullable
+        private Bitmap getThumbnailFromServerAndAddToCache(Bitmap thumbnail) {
+            try {
+                mClient = OwnCloudClientManagerFactory.getDefaultSingleton().getClientFor(user.toOwnCloudAccount(),
+                                                                                          MainApp.getAppContext());
+
+                thumbnail = doResizedImageInBackground(file, storageManager);
+                newImage = true;
+
+                if (MimeTypeUtil.isVideo(file) && thumbnail != null) {
+                    thumbnail = addVideoOverlay(thumbnail, MainApp.getAppContext());
+                }
+
+            } catch (OutOfMemoryError oome) {
+                Log_OC.e(TAG, "Out of memory");
+            } catch (Throwable t) {
+                // the app should never break due to a problem with thumbnails
+                Log_OC.e(TAG, "Generation of gallery image for " + file + " failed", t);
+            }
+
+            return thumbnail;
+        }
+
+        private Bitmap getThumbnailFromCache(Bitmap thumbnail) {
+            float size = (float) ThumbnailsCacheManager.getThumbnailDimension();
+
+            // resized dimensions
+            ImageDimension imageDimension = file.getImageDimension();
+            if (imageDimension == null ||
+                imageDimension.getWidth() != size ||
+                imageDimension.getHeight() != size) {
+                file.setImageDimension(new ImageDimension(thumbnail.getWidth(), thumbnail.getHeight()));
+                storageManager.saveFile(file);
+            }
+
+            if (MimeTypeUtil.isVideo(file)) {
+                return ThumbnailsCacheManager.addVideoOverlay(thumbnail, MainApp.getAppContext());
+            } else {
+                return thumbnail;
+            }
         }
 
         protected void onPostExecute(Bitmap bitmap) {
@@ -489,7 +475,7 @@ public final class ThumbnailsCacheManager {
                             }
                         } else {
                             if (fileFragment instanceof PreviewImageFragment) {
-                                ((PreviewImageFragment) fileFragment).setErrorPreviewMessage();
+                                ((PreviewImageFragment) fileFragment).handleUnsupportedImage();
                             }
                         }
                     }).start();
@@ -730,8 +716,9 @@ public final class ThumbnailsCacheManager {
                                 // thumbnail
                                 String uri;
                                 if (file instanceof OCFile) {
-                                    uri = mClient.getBaseUri() + "/index.php/apps/files/api/v1/thumbnail/" +
-                                        pxW + "/" + pxH + Uri.encode(file.getRemotePath(), "/");
+                                    uri = mClient.getBaseUri() + "/index.php/core/preview?fileId="
+                                        + file.getLocalId()
+                                        + "&x=" + pxW + "&y=" + pxH + "&a=1&mode=cover&forceIcon=0";
                                 } else {
                                     uri = mClient.getBaseUri() + "/index.php/apps/files_trashbin/preview?fileId=" +
                                         file.getLocalId() + "&x=" + pxW + "&y=" + pxH;
@@ -894,8 +881,7 @@ public final class ThumbnailsCacheManager {
                 } else {
                     if (mFile != null) {
                         if (mFile.isDirectory()) {
-                            imageView.setImageDrawable(MimeTypeUtil.getDefaultFolderIcon(mContext,
-                                                                                         viewThemeUtils));
+                            imageView.setImageDrawable(MimeTypeUtil.getDefaultFolderIcon(mContext, viewThemeUtils));
                         } else {
                             if (MimeTypeUtil.isVideo(mFile)) {
                                 imageView.setImageBitmap(ThumbnailsCacheManager.mDefaultVideo);
@@ -1275,9 +1261,11 @@ public final class ThumbnailsCacheManager {
     }
 
     /**
-     * adapted from https://stackoverflow.com/a/8113368
+     * adapted from <a href="https://stackoverflow.com/a/8113368">...</a>
      */
     private static Bitmap handlePNG(Bitmap source, int newWidth, int newHeight) {
+        Bitmap softwareBitmap = source.copy(Bitmap.Config.ARGB_8888, false);
+
         int sourceWidth = source.getWidth();
         int sourceHeight = source.getHeight();
 
@@ -1296,8 +1284,9 @@ public final class ThumbnailsCacheManager {
         Bitmap dest = Bitmap.createBitmap(newWidth, newHeight, Bitmap.Config.ARGB_8888);
 
         Canvas canvas = new Canvas(dest);
-        canvas.drawColor(MainApp.getAppContext().getResources().getColor(R.color.background_color_png));
-        canvas.drawBitmap(source, null, targetRect, null);
+        int color = ContextCompat.getColor(MainApp.getAppContext(),R.color.background_color_png);
+        canvas.drawColor(color);
+        canvas.drawBitmap(softwareBitmap, null, targetRect, null);
 
         return dest;
     }
@@ -1414,8 +1403,8 @@ public final class ThumbnailsCacheManager {
                 if (mClient != null) {
                     GetMethod getMethod = null;
                     try {
-                        String uri = mClient.getBaseUri() + "/index.php/core/preview.png?file="
-                            + URLEncoder.encode(file.getRemotePath())
+                        String uri = mClient.getBaseUri() + "/index.php/core/preview?fileId="
+                            + file.getLocalId()
                             + "&x=" + (pxW / 2) + "&y=" + (pxH / 2) + "&a=1&mode=cover&forceIcon=0";
                         Log_OC.d(TAG, "generate resized image: " + file.getFileName() + " URI: " + uri);
                         getMethod = new GetMethod(uri);
@@ -1449,9 +1438,10 @@ public final class ThumbnailsCacheManager {
                 }
             }
 
-            // resized dimensions
+            // resized dimensions and set update thumbnail needed to false to prevent rendering loop
             if (thumbnail != null) {
                 file.setImageDimension(new ImageDimension(thumbnail.getWidth(), thumbnail.getHeight()));
+                file.setUpdateThumbnailNeeded(false);
                 storageManager.saveFile(file);
             }
         }

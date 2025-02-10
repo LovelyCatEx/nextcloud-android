@@ -1,29 +1,17 @@
 /*
- *   ownCloud Android client application
+ * Nextcloud - Android Client
  *
- *   @author Bartek Przybylski
- *   @author David A. Velasco
- *   @author Chris Narkiewicz
- *   @author TSI-mc
- *
- *   Copyright (C) 2011  Bartek Przybylski
- *   Copyright (C) 2016 ownCloud Inc.
- *   Copyright (C) 2016 Nextcloud
- *   Copyright (C) 2019 Chris Narkiewicz <hello@ezaquarii.com>
- *   Copyright (C) 2023 TSI-mc
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License version 2,
- *   as published by the Free Software Foundation.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
+ * SPDX-FileCopyrightText: 2023 Alper Ozturk <alper.ozturk@nextcloud.com>
+ * SPDX-FileCopyrightText: 2023 TSI-mc
+ * SPDX-FileCopyrightText: 2022-2023 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2017-2018 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2019 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-FileCopyrightText: 2015-2017 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-FileCopyrightText: 2016 ownCloud Inc.
+ * SPDX-FileCopyrightText: 2014 Jose Antonio Barros Ramos <jabarros@solidgear.es>
+ * SPDX-FileCopyrightText: 2013 María Asensio Valverde <masensio@solidgear.es>
+ * SPDX-FileCopyrightText: 2011-2015 Bartosz Przybylski <bart.p.pl@gmail.com>
+ * SPDX-License-Identifier: GPL-2.0-only AND (AGPL-3.0-or-later OR GPL-2.0-only)
  */
 package com.owncloud.android.ui.activity;
 
@@ -33,7 +21,9 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Configuration;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.preference.ListPreference;
 import android.preference.Preference;
@@ -50,6 +40,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.URLUtil;
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.nextcloud.client.account.User;
 import com.nextcloud.client.account.UserAccountManager;
 import com.nextcloud.client.di.Injectable;
@@ -60,22 +51,23 @@ import com.nextcloud.client.network.ConnectivityService;
 import com.nextcloud.client.preferences.AppPreferences;
 import com.nextcloud.client.preferences.AppPreferencesImpl;
 import com.nextcloud.client.preferences.DarkMode;
-import com.owncloud.android.BuildConfig;
+import com.nextcloud.utils.extensions.ViewExtensionsKt;
+import com.nextcloud.utils.extensions.WindowExtensionsKt;
+import com.nextcloud.utils.mdm.MDMConfig;
 import com.owncloud.android.MainApp;
 import com.owncloud.android.R;
 import com.owncloud.android.authentication.AuthenticatorActivity;
 import com.owncloud.android.datamodel.ArbitraryDataProvider;
 import com.owncloud.android.datamodel.ArbitraryDataProviderImpl;
 import com.owncloud.android.datamodel.ExternalLinksProvider;
-import com.owncloud.android.datastorage.DataStorageProvider;
-import com.owncloud.android.datastorage.StoragePoint;
 import com.owncloud.android.lib.common.ExternalLink;
 import com.owncloud.android.lib.common.ExternalLinkType;
 import com.owncloud.android.lib.common.utils.Log_OC;
 import com.owncloud.android.providers.DocumentsStorageProvider;
+import com.owncloud.android.ui.ListPreferenceDialog;
 import com.owncloud.android.ui.ThemeableSwitchPreference;
 import com.owncloud.android.ui.asynctasks.LoadingVersionNumberTask;
-import com.owncloud.android.ui.dialog.SetupEncryptionDialogFragment;
+import com.owncloud.android.ui.dialog.setupEncryption.SetupEncryptionDialogFragment;
 import com.owncloud.android.ui.helpers.FileOperationsHelper;
 import com.owncloud.android.utils.ClipboardUtil;
 import com.owncloud.android.utils.DeviceCredentialUtils;
@@ -87,6 +79,7 @@ import com.owncloud.android.utils.theme.ViewThemeUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import javax.inject.Inject;
 
@@ -94,14 +87,12 @@ import androidx.annotation.LayoutRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.VisibleForTesting;
 import androidx.appcompat.app.ActionBar;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.res.ResourcesCompat;
 
 /**
  * An Activity that allows the user to change the application's settings.
- * <p>
  * It proxies the necessary calls via {@link androidx.appcompat.app.AppCompatDelegate} to be used with AppCompat.
  */
 public class SettingsActivity extends PreferenceActivity
@@ -127,6 +118,7 @@ public class SettingsActivity extends PreferenceActivity
     private static final int ACTION_REQUEST_CODE_DAVDROID_SETUP = 10;
     private static final int ACTION_SHOW_MNEMONIC = 11;
     private static final int ACTION_E2E = 12;
+    private static final int ACTION_SET_STORAGE_LOCATION = 13;
     private static final int TRUE_VALUE = 1;
 
     private static final String DAV_PATH = "/remote.php/dav";
@@ -135,11 +127,12 @@ public class SettingsActivity extends PreferenceActivity
 
     private Uri serverBaseUri;
 
-    private ListPreference lock;
+    private ListPreferenceDialog lock;
     private ThemeableSwitchPreference showHiddenFiles;
+    private ThemeableSwitchPreference showEcosystemApps;
     private AppCompatDelegate delegate;
 
-    private ListPreference prefStoragePath;
+    private  Preference prefDataLoc;
     private String storagePath;
     private String pendingLock;
 
@@ -151,10 +144,15 @@ public class SettingsActivity extends PreferenceActivity
     @Inject ViewThemeUtils viewThemeUtils;
     @Inject ConnectivityService connectivityService;
 
-
     @SuppressWarnings("deprecation")
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        boolean isApiLevel35OrHigher = (Build.VERSION.SDK_INT >= 35);
+        if (isApiLevel35OrHigher) {
+            WindowExtensionsKt.addSystemBarPaddings(getWindow());
+            WindowExtensionsKt.setNoLimitLayout(getWindow());
+        }
+
         super.onCreate(savedInstanceState);
 
         getDelegate().installViewFactory();
@@ -183,6 +181,9 @@ public class SettingsActivity extends PreferenceActivity
         // Details
         setupDetailsCategory(preferenceScreen);
 
+        // Sync
+        setupSyncCategory();
+
         // More
         setupMoreCategory();
 
@@ -194,6 +195,31 @@ public class SettingsActivity extends PreferenceActivity
 
         // workaround for mismatched color when app dark mode and system dark mode don't agree
         setListBackground();
+        showPasscodeDialogIfEnforceAppProtection();
+
+        if (isApiLevel35OrHigher) {
+            adjustTopMarginForActionBar();
+        }
+    }
+
+    private void adjustTopMarginForActionBar() {
+        if (getListView() == null) {
+            return;
+        }
+
+        float topMarginInDp = getResources().getDimension(R.dimen.settings_activity_padding);
+        int topMarginInPx = DisplayUtils.convertDpToPixel(topMarginInDp, this);
+        ViewExtensionsKt.setMargins(getListView(), 0, topMarginInPx, 0, 0);
+
+        getWindow().getDecorView().setBackgroundColor(ContextCompat.getColor(this, R.color.bg_default));
+    }
+
+    private void showPasscodeDialogIfEnforceAppProtection() {
+        if (MDMConfig.INSTANCE.enforceProtection(this) && Objects.equals(preferences.getLockPreference(), SettingsActivity.LOCK_NONE) && lock != null) {
+            lock.showDialog();
+            lock.dismissible(false);
+            lock.enableCancelButton(false);
+        }
     }
 
     private void setupDevCategory(PreferenceScreen preferenceScreen) {
@@ -293,7 +319,7 @@ public class SettingsActivity extends PreferenceActivity
                                             getResources().getString(R.string.privacy));
                             intent.putExtra(ExternalSiteWebView.EXTRA_URL, privacyUrl.toString());
                             intent.putExtra(ExternalSiteWebView.EXTRA_SHOW_SIDEBAR, false);
-                            intent.putExtra(ExternalSiteWebView.EXTRA_MENU_ITEM_ID, -1);
+                            DrawerActivity.menuItemId = Menu.NONE;
                         }
 
                         startActivity(intent);
@@ -323,11 +349,25 @@ public class SettingsActivity extends PreferenceActivity
         }
     }
 
+    @Override
+    public void onBackPressed() {
+        Intent i = new Intent(this, FileDisplayActivity.class);
+        i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        i.setAction(FileDisplayActivity.ALL_FILES);
+        startActivity(i);
+    }
+
+    private void setupSyncCategory() {
+        final PreferenceCategory preferenceCategorySync = (PreferenceCategory) findPreference("sync");
+        viewThemeUtils.files.themePreferenceCategory(preferenceCategorySync);
+
+        setupAutoUploadPreference(preferenceCategorySync);
+        setupInternalTwoWaySyncPreference();
+    }
+
     private void setupMoreCategory() {
         final PreferenceCategory preferenceCategoryMore = (PreferenceCategory) findPreference("more");
         viewThemeUtils.files.themePreferenceCategory(preferenceCategoryMore);
-
-        setupAutoUploadPreference(preferenceCategoryMore);
 
         setupCalendarPreference(preferenceCategoryMore);
 
@@ -361,9 +401,7 @@ public class SettingsActivity extends PreferenceActivity
                     String imprintWeb = getString(R.string.url_imprint);
 
                     if (!imprintWeb.isEmpty()) {
-                        Uri uriUrl = Uri.parse(imprintWeb);
-                        Intent intent = new Intent(Intent.ACTION_VIEW, uriUrl);
-                        DisplayUtils.startIntentIfAppAvailable(intent, this, R.string.no_browser_available);
+                        DisplayUtils.startLinkIntent(this, imprintWeb);
                     }
                     //ImprintDialog.newInstance(true).show(preference.get, "IMPRINT_DIALOG");
                     return true;
@@ -375,11 +413,9 @@ public class SettingsActivity extends PreferenceActivity
     }
 
     private void setupLoggingPreference(PreferenceCategory preferenceCategoryMore) {
-
-        boolean loggerEnabled = getResources().getBoolean(R.bool.logger_enabled) || BuildConfig.DEBUG;
         Preference pLogger = findPreference("logger");
         if (pLogger != null) {
-            if (loggerEnabled) {
+            if (MDMConfig.INSTANCE.isLogEnabled(this)) {
                 pLogger.setOnPreferenceClickListener(preference -> {
                     Intent loggerIntent = new Intent(getApplicationContext(), LogsActivity.class);
                     startActivity(loggerIntent);
@@ -475,7 +511,7 @@ public class SettingsActivity extends PreferenceActivity
     }
 
     private void setupE2EMnemonicPreference(PreferenceCategory preferenceCategoryMore) {
-        String mnemonic = arbitraryDataProvider.getValue(user.getAccountName(), EncryptionUtils.MNEMONIC);
+        String mnemonic = arbitraryDataProvider.getValue(user.getAccountName(), EncryptionUtils.MNEMONIC).trim();
 
         Preference pMnemonic = findPreference("mnemonic");
         if (pMnemonic != null) {
@@ -507,30 +543,32 @@ public class SettingsActivity extends PreferenceActivity
                 preferenceCategoryMore.removePreference(preference);
             } else {
                 preference.setOnPreferenceClickListener(p -> {
-                    AlertDialog.Builder builder = new AlertDialog.Builder(this, R.style.FallbackTheming_Dialog);
-                    AlertDialog alertDialog = builder.setTitle(R.string.prefs_e2e_mnemonic)
-                        .setMessage(getString(R.string.remove_e2e_message))
-                        .setCancelable(true)
-                        .setNegativeButton(R.string.common_cancel, ((dialog, i) -> dialog.dismiss()))
-                        .setPositiveButton(R.string.confirm_removal, (dialog, which) -> {
-                            EncryptionUtils.removeE2E(arbitraryDataProvider, user);
-                            preferenceCategoryMore.removePreference(preference);
-
-                            Preference pMnemonic = findPreference("mnemonic");
-                            if (pMnemonic != null) {
-                                preferenceCategoryMore.removePreference(pMnemonic);
-                            }
-
-                            dialog.dismiss();
-                        })
-                        .create();
-
-                    alertDialog.show();
-
+                    showRemoveE2EAlertDialog(preferenceCategoryMore, preference);
                     return true;
                 });
             }
         }
+    }
+
+    private void showRemoveE2EAlertDialog(PreferenceCategory preferenceCategoryMore, Preference preference) {
+        new MaterialAlertDialogBuilder(this, R.style.FallbackTheming_Dialog)
+            .setTitle(R.string.prefs_e2e_mnemonic)
+            .setMessage(getString(R.string.remove_e2e_message))
+            .setCancelable(true)
+            .setNegativeButton(R.string.common_cancel, ((dialog, i) -> dialog.dismiss()))
+            .setPositiveButton(R.string.confirm_removal, (dialog, which) -> {
+                EncryptionUtils.removeE2E(arbitraryDataProvider, user);
+                preferenceCategoryMore.removePreference(preference);
+
+                Preference pMnemonic = findPreference("mnemonic");
+                if (pMnemonic != null) {
+                    preferenceCategoryMore.removePreference(pMnemonic);
+                }
+
+                dialog.dismiss();
+            })
+            .create()
+            .show();
     }
 
     private void setupHelpPreference(PreferenceCategory preferenceCategoryMore) {
@@ -539,12 +577,7 @@ public class SettingsActivity extends PreferenceActivity
         if (pHelp != null) {
             if (helpEnabled) {
                 pHelp.setOnPreferenceClickListener(preference -> {
-                    String helpWeb = getString(R.string.url_help);
-                    if (!helpWeb.isEmpty()) {
-                        Uri uriUrl = Uri.parse(helpWeb);
-                        Intent intent = new Intent(Intent.ACTION_VIEW, uriUrl);
-                        DisplayUtils.startIntentIfAppAvailable(intent, this, R.string.no_browser_available);
-                    }
+                    DisplayUtils.startLinkIntent(this, R.string.url_help);
                     return true;
                 });
             } else {
@@ -564,6 +597,16 @@ public class SettingsActivity extends PreferenceActivity
                 return true;
             });
         }
+    }
+
+    private void setupInternalTwoWaySyncPreference() {
+        Preference twoWaySync = findPreference("internal_two_way_sync");
+
+        twoWaySync.setOnPreferenceClickListener(preference -> {
+            Intent intent = new Intent(this, InternalTwoWaySyncActivity.class);
+            startActivity(intent);
+            return true;
+        });
     }
 
     private void setupBackupPreference() {
@@ -613,12 +656,15 @@ public class SettingsActivity extends PreferenceActivity
         boolean fPassCodeEnabled = getResources().getBoolean(R.bool.passcode_enabled);
         boolean fDeviceCredentialsEnabled = getResources().getBoolean(R.bool.device_credentials_enabled);
         boolean fShowHiddenFilesEnabled = getResources().getBoolean(R.bool.show_hidden_files_enabled);
+        boolean fShowEcosystemAppsEnabled = !getResources().getBoolean(R.bool.is_branded_client);
         boolean fSyncedFolderLightEnabled = getResources().getBoolean(R.bool.syncedFolder_light);
         boolean fShowMediaScanNotifications = preferences.isShowMediaScanNotifications();
 
         setupLockPreference(preferenceCategoryDetails, fPassCodeEnabled, fDeviceCredentialsEnabled);
 
         setupHiddenFilesPreference(preferenceCategoryDetails, fShowHiddenFilesEnabled);
+
+        setupShowEcosystemAppsPreference(preferenceCategoryDetails, fShowEcosystemAppsEnabled);
 
         setupShowMediaScanNotifications(preferenceCategoryDetails, fShowMediaScanNotifications);
 
@@ -651,29 +697,51 @@ public class SettingsActivity extends PreferenceActivity
         }
     }
 
+    private void setupShowEcosystemAppsPreference(PreferenceCategory preferenceCategoryDetails, boolean fShowEcosystemAppsEnabled) {
+        showEcosystemApps = (ThemeableSwitchPreference) findPreference("show_ecosystem_apps");
+        if (fShowEcosystemAppsEnabled) {
+            showEcosystemApps.setOnPreferenceClickListener(preference -> {
+                preferences.setShowEcosystemApps(showEcosystemApps.isChecked());
+                return true;
+            });
+        } else {
+            preferenceCategoryDetails.removePreference(showEcosystemApps);
+        }
+    }
+
+
     private void setupLockPreference(PreferenceCategory preferenceCategoryDetails,
                                      boolean passCodeEnabled,
                                      boolean deviceCredentialsEnabled) {
-        lock = (ListPreference) findPreference(PREFERENCE_LOCK);
+        boolean enforceProtection = MDMConfig.INSTANCE.enforceProtection(this);
+        lock = (ListPreferenceDialog) findPreference(PREFERENCE_LOCK);
+        int optionSize = 3;
+        if (enforceProtection) {
+            optionSize = 2;
+        }
+
         if (lock != null && (passCodeEnabled || deviceCredentialsEnabled)) {
-            ArrayList<String> lockEntries = new ArrayList<>(3);
-            lockEntries.add(getString(R.string.prefs_lock_none));
+            ArrayList<String> lockEntries = new ArrayList<>(optionSize);
             lockEntries.add(getString(R.string.prefs_lock_using_passcode));
             lockEntries.add(getString(R.string.prefs_lock_using_device_credentials));
 
-            ArrayList<String> lockValues = new ArrayList<>(3);
-            lockValues.add(LOCK_NONE);
+            ArrayList<String> lockValues = new ArrayList<>(optionSize);
             lockValues.add(LOCK_PASSCODE);
             lockValues.add(LOCK_DEVICE_CREDENTIALS);
 
-            if (!passCodeEnabled) {
-                lockEntries.remove(1);
-                lockValues.remove(1);
-            } else if (!deviceCredentialsEnabled ||
-                !DeviceCredentialUtils.areCredentialsAvailable(getApplicationContext())) {
-                lockEntries.remove(2);
-                lockValues.remove(2);
+            if (!enforceProtection) {
+                lockEntries.add(getString(R.string.prefs_lock_none));
+                lockValues.add(LOCK_NONE);
             }
+
+            if (!passCodeEnabled) {
+                lockEntries.remove(getString(R.string.prefs_lock_using_passcode));
+                lockValues.remove(LOCK_PASSCODE);
+            } else if (!deviceCredentialsEnabled || !DeviceCredentialUtils.areCredentialsAvailable(getApplicationContext())) {
+                lockEntries.remove(getString(R.string.prefs_lock_using_device_credentials));
+                lockValues.remove(LOCK_DEVICE_CREDENTIALS);
+            }
+
             String[] lockEntriesArr = new String[lockEntries.size()];
             lockEntriesArr = lockEntries.toArray(lockEntriesArr);
             String[] lockValuesArr = new String[lockValues.size()];
@@ -682,6 +750,7 @@ public class SettingsActivity extends PreferenceActivity
             lock.setEntries(lockEntriesArr);
             lock.setEntryValues(lockValuesArr);
             lock.setSummary(lock.getEntry());
+
             lock.setOnPreferenceChangeListener((preference, o) -> {
                 pendingLock = LOCK_NONE;
                 String oldValue = ((ListPreference) preference).getValue();
@@ -775,33 +844,17 @@ public class SettingsActivity extends PreferenceActivity
         final PreferenceCategory preferenceCategoryGeneral = (PreferenceCategory) findPreference("general");
         viewThemeUtils.files.themePreferenceCategory(preferenceCategoryGeneral);
 
-        prefStoragePath = (ListPreference) findPreference(AppPreferencesImpl.STORAGE_PATH);
-        if (prefStoragePath != null) {
-            StoragePoint[] storageOptions = DataStorageProvider.getInstance().getAvailableStoragePoints();
-            String[] entries = new String[storageOptions.length];
-            String[] values = new String[storageOptions.length];
-            for (int i = 0; i < storageOptions.length; ++i) {
-                entries[i] = storageOptions[i].getDescription();
-                values[i] = storageOptions[i].getPath();
-            }
-            prefStoragePath.setEntries(entries);
-            prefStoragePath.setEntryValues(values);
+        readStoragePath();
 
-            prefStoragePath.setOnPreferenceChangeListener((preference, newValue) -> {
-                String newPath = (String) newValue;
-
-                if (storagePath.equals(newPath)) {
-                    return true;
-                }
-                StorageMigration storageMigration = new StorageMigration(this, user, storagePath, newPath);
-                storageMigration.setStorageMigrationProgressListener(this);
-                storageMigration.migrate();
-
-                return false;
+        prefDataLoc = findPreference(AppPreferencesImpl.DATA_STORAGE_LOCATION);
+        if (prefDataLoc != null) {
+            prefDataLoc.setOnPreferenceClickListener(p -> {
+                Intent intent = new Intent(MainApp.getAppContext(), ChooseStorageLocationActivity.class);
+                intent.setFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                startActivityForResult(intent, ACTION_SET_STORAGE_LOCATION);
+                return true;
             });
         }
-
-        loadStoragePath();
 
         ListPreference themePref = (ListPreference) findPreference("darkMode");
 
@@ -857,20 +910,22 @@ public class SettingsActivity extends PreferenceActivity
 
     private void setupActionBar() {
         ActionBar actionBar = getDelegate().getSupportActionBar();
+        if (actionBar == null) return;
 
-        if (actionBar != null) {
-            viewThemeUtils.platform.themeStatusBar(this);
-            actionBar.setDisplayHomeAsUpEnabled(true);
-            actionBar.setDisplayShowTitleEnabled(true);
-            if (this.getResources() != null) {
-                viewThemeUtils.androidx.themeActionBar(this,
-                                                       actionBar,
-                                                       getString(R.string.actionbar_settings),
-                                                       ResourcesCompat.getDrawable(this.getResources(),
-                                                                                   R.drawable.ic_arrow_back,
-                                                                                   null));
-            }
-        }
+        viewThemeUtils.platform.themeStatusBar(this);
+        actionBar.setDisplayHomeAsUpEnabled(true);
+        actionBar.setDisplayShowTitleEnabled(true);
+
+        if (getResources() == null) return;
+        Drawable menuIcon = ResourcesCompat.getDrawable(getResources(),
+                                                        R.drawable.ic_arrow_back,
+                                                        null);
+
+        if (menuIcon == null) return;
+        viewThemeUtils.androidx.themeActionBar(this,
+                                               actionBar,
+                                               getString(R.string.actionbar_settings),
+                                               menuIcon);
     }
 
     private void launchDavDroidLogin() {
@@ -897,9 +952,7 @@ public class SettingsActivity extends PreferenceActivity
                 startActivity(installIntent);
             } else {
                 // no f-droid market app or Play store installed --> launch browser for f-droid url
-                Intent downloadIntent = new Intent(Intent.ACTION_VIEW,
-                                                   Uri.parse("https://f-droid.org/repository/browse/?fdid=at.bitfire.davdroid"));
-                DisplayUtils.startIntentIfAppAvailable(downloadIntent, this, R.string.no_browser_available);
+                DisplayUtils.startLinkIntent(this, "https://f-droid.org/packages/at.bitfire.davdroid/");
 
                 DisplayUtils.showSnackMessage(this, R.string.prefs_calendar_contacts_no_store_error);
             }
@@ -929,7 +982,9 @@ public class SettingsActivity extends PreferenceActivity
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
-        if (requestCode == ACTION_REQUEST_PASSCODE && resultCode == RESULT_OK) {
+        if (requestCode == ACTION_REQUEST_PASSCODE && resultCode == RESULT_CANCELED) {
+            showPasscodeDialogIfEnforceAppProtection();
+        } else if (requestCode == ACTION_REQUEST_PASSCODE && resultCode == RESULT_OK) {
             String passcode = data.getStringExtra(PassCodeActivity.KEY_PASSCODE);
             if (passcode != null && passcode.length() == 4) {
                 SharedPreferences.Editor appPrefs = PreferenceManager
@@ -969,6 +1024,14 @@ public class SettingsActivity extends PreferenceActivity
             i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
             i.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
             startActivity(i);
+        } else if (requestCode == ACTION_SET_STORAGE_LOCATION && data != null) {
+            String newPath = data.getStringExtra(ChooseStorageLocationActivity.KEY_RESULT_STORAGE_LOCATION);
+
+            if (storagePath != null && !storagePath.equals(newPath)) {
+                StorageMigration storageMigration = new StorageMigration(this, user, storagePath, newPath, viewThemeUtils);
+                storageMigration.setStorageMigrationProgressListener(this);
+                storageMigration.migrate();
+            }
         }
     }
 
@@ -982,21 +1045,22 @@ public class SettingsActivity extends PreferenceActivity
                 RequestCredentialsActivity.KEY_CHECK_RESULT_TRUE) {
 
                 ArbitraryDataProvider arbitraryDataProvider = new ArbitraryDataProviderImpl(this);
-                String mnemonic = arbitraryDataProvider.getValue(user.getAccountName(), EncryptionUtils.MNEMONIC);
-
-                AlertDialog.Builder builder = new AlertDialog.Builder(this, R.style.FallbackTheming_Dialog);
-                AlertDialog alertDialog = builder.setTitle(R.string.prefs_e2e_mnemonic)
-                    .setMessage(mnemonic)
-                    .setNegativeButton(R.string.common_cancel, (dialog, i) -> dialog.dismiss())
-                    .setNeutralButton(R.string.common_copy, (dialog, i) ->
-                        ClipboardUtil.copyToClipboard(this, mnemonic, false))
-                    .setPositiveButton(R.string.common_ok, (dialog, which) -> dialog.dismiss())
-                    .create();
-
-                alertDialog.show();
-                viewThemeUtils.platform.colorTextButtons(alertDialog.getButton(AlertDialog.BUTTON_POSITIVE));
+                String mnemonic = arbitraryDataProvider.getValue(user.getAccountName(), EncryptionUtils.MNEMONIC).trim();
+                showMnemonicAlertDialogDialog(mnemonic);
             }
         }
+    }
+
+    private void showMnemonicAlertDialogDialog(String mnemonic) {
+        new MaterialAlertDialogBuilder(this, R.style.FallbackTheming_Dialog)
+            .setTitle(R.string.prefs_e2e_mnemonic)
+            .setMessage(mnemonic)
+            .setPositiveButton(R.string.common_ok, (dialog, which) -> dialog.dismiss())
+            .setNegativeButton(R.string.common_cancel, (dialog, i) -> dialog.dismiss())
+            .setNeutralButton(R.string.common_copy, (dialog, i) ->
+                ClipboardUtil.copyToClipboard(this, mnemonic, false))
+            .create()
+            .show();
     }
 
     @Override
@@ -1073,7 +1137,7 @@ public class SettingsActivity extends PreferenceActivity
     }
 
     private void loadExternalSettingLinks(PreferenceCategory preferenceCategory) {
-        if (getBaseContext().getResources().getBoolean(R.bool.show_external_links)) {
+        if (MDMConfig.INSTANCE.externalSiteSupport(this)) {
             ExternalLinksProvider externalLinksProvider = new ExternalLinksProvider(getContentResolver());
 
             for (final ExternalLink link : externalLinksProvider.getExternalLink(ExternalLinkType.SETTINGS)) {
@@ -1089,7 +1153,7 @@ public class SettingsActivity extends PreferenceActivity
                         externalWebViewIntent.putExtra(ExternalSiteWebView.EXTRA_TITLE, link.getName());
                         externalWebViewIntent.putExtra(ExternalSiteWebView.EXTRA_URL, link.getUrl());
                         externalWebViewIntent.putExtra(ExternalSiteWebView.EXTRA_SHOW_SIDEBAR, false);
-                        externalWebViewIntent.putExtra(ExternalSiteWebView.EXTRA_MENU_ITEM_ID, link.getId());
+                        DrawerActivity.menuItemId = link.getId();
                         startActivity(externalWebViewIntent);
 
                         return true;
@@ -1111,21 +1175,12 @@ public class SettingsActivity extends PreferenceActivity
         SharedPreferences.Editor editor = appPrefs.edit();
         editor.putString(AppPreferencesImpl.STORAGE_PATH, storagePath);
         editor.apply();
-        String storageDescription = DataStorageProvider.getInstance().getStorageDescriptionByPath(storagePath);
-        prefStoragePath.setSummary(storageDescription);
-        prefStoragePath.setValue(newStoragePath);
     }
 
-    /**
-     * Load storage path set on preferences
-     */
-    private void loadStoragePath() {
+    private void readStoragePath() {
         SharedPreferences appPrefs = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
         // Load storage path from shared preferences. Use private internal storage by default.
-        storagePath = appPrefs.getString(AppPreferencesImpl.STORAGE_PATH,
-                                         getApplicationContext().getFilesDir().getAbsolutePath());
-        String storageDescription = DataStorageProvider.getInstance().getStorageDescriptionByPath(storagePath);
-        prefStoragePath.setSummary(storageDescription);
+        storagePath = appPrefs.getString(AppPreferencesImpl.STORAGE_PATH, getApplicationContext().getFilesDir().getAbsolutePath());
     }
 
     @Override

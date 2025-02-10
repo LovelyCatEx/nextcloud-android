@@ -1,53 +1,77 @@
 /*
+ * Nextcloud - Android Client
  *
- * Nextcloud Android client application
- *
- * @author TSI-mc
- * Copyright (C) 2023 TSI-mc
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2023 TSI-mc
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
-
 package com.nmc.android.ui
 
+import androidx.annotation.UiThread
+import androidx.test.core.app.launchActivity
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.IdlingRegistry
 import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers
 import androidx.test.espresso.matcher.ViewMatchers.isCompletelyDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility
 import androidx.test.espresso.matcher.ViewMatchers.withId
-import androidx.test.espresso.matcher.ViewMatchers.withText
-import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.owncloud.android.AbstractIT
 import com.owncloud.android.R
-import org.junit.Rule
+import com.owncloud.android.utils.EspressoIdlingResource
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LauncherActivityIT : AbstractIT() {
 
-    @get:Rule
-    val activityRule = ActivityScenarioRule(LauncherActivity::class.java)
+    @Before
+    fun registerIdlingResource() {
+        IdlingRegistry.getInstance().register(EspressoIdlingResource.countingIdlingResource)
+    }
+
+    @After
+    fun unregisterIdlingResource() {
+        IdlingRegistry.getInstance().unregister(EspressoIdlingResource.countingIdlingResource)
+    }
 
     @Test
-    fun verifyUIElements() {
-        waitForIdleSync()
-        onView(withId(R.id.ivSplash)).check(matches(isCompletelyDisplayed()))
-        onView(withId(R.id.splashScreenBold)).check(matches(isCompletelyDisplayed()))
-        onView(withId(R.id.splashScreenNormal)).check(matches(isCompletelyDisplayed()))
+    @UiThread
+    fun testSplashScreenWithEmptyTitlesShouldHideTitles() {
+        launchActivity<LauncherActivity>().use { scenario ->
+            scenario.onActivity { _ ->
+                onIdleSync {
+                    onView(withId(R.id.ivSplash)).check(matches(isCompletelyDisplayed()))
+                    onView(
+                        withId(R.id.splashScreenBold)
+                    ).check(matches(withEffectiveVisibility(ViewMatchers.Visibility.GONE)))
+                    onView(
+                        withId(R.id.splashScreenNormal)
+                    ).check(matches(withEffectiveVisibility(ViewMatchers.Visibility.GONE)))
+                }
+            }
+        }
+    }
 
-        onView(withId(R.id.splashScreenBold)).check(matches(withText("Magenta")))
-        onView(withId(R.id.splashScreenNormal)).check(matches(withText("CLOUD")))
+    @Test
+    @UiThread
+    fun testSplashScreenWithTitlesShouldShowTitles() {
+        launchActivity<LauncherActivity>().use { scenario ->
+            scenario.onActivity {
+                onIdleSync {
+                    onView(withId(R.id.ivSplash)).check(matches(isCompletelyDisplayed()))
+
+                    EspressoIdlingResource.increment()
+                    it.setSplashTitles("Example", "Cloud")
+                    EspressoIdlingResource.decrement()
+
+                    val onePercentArea = ViewMatchers.isDisplayingAtLeast(1)
+                    onView(withId(R.id.splashScreenBold)).check(matches(onePercentArea))
+                    onView(withId(R.id.splashScreenNormal)).check(matches(onePercentArea))
+                }
+            }
+        }
     }
 }

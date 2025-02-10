@@ -1,31 +1,15 @@
-/**
- * Nextcloud Android client application
+/*
+ * Nextcloud - Android Client
  *
- * @author David A. Velasco
- * @author masensio
- * @author Chris Narkiewicz
- * Copyright (C) 2013 David A. Velasco
- * Copyright (C) 2016 masensio
- * Copyright (C) 2019 Chris Narkiewicz <hello@ezaquarii.com>
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2022 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2019 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
 package com.nextcloud.client.media
 
 import android.content.Context
 import android.media.MediaPlayer
-import com.google.android.exoplayer2.PlaybackException
+import androidx.media3.common.PlaybackException
 import com.owncloud.android.R
 
 /**

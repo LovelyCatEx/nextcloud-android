@@ -1,35 +1,45 @@
+/*
+ * Nextcloud - Android Client
+ *
+ * SPDX-FileCopyrightText: 2016-2024 Nextcloud GmbH and Nextcloud contributors
+ * SPDX-FileCopyrightText: 2024 Alper Ozturk <alper.ozturk@nextcloud.com>
+ * SPDX-FileCopyrightText: 2023 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2022 Álvaro Brey Vilas <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2016 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
+ */
 buildscript {
     ext {
-        androidPluginVersion = '8.0.2'
-        appCompatVersion = '1.6.1'
-        jacoco_version = '0.8.10'
-        kotlin_version = '1.8.22'
-        androidxTestVersion = "1.4.0"
-        daggerVersion = "2.46.1"
+        androidLibraryVersion = "fe8b18f5ae47889872a714ffdccbd67d7532d893"
+        androidPluginVersion = '8.8.0'
+        androidxMediaVersion = '1.5.1'
+        androidxTestVersion = "1.6.1"
+        appCompatVersion = '1.7.0'
+        checkerVersion = "3.21.2"
+        daggerVersion = "2.55"
+        documentScannerVersion = "1.1.1"
+        espressoVersion = "3.6.1"
+        jacoco_version = '0.8.12'
+        kotlin_version = '2.1.0'
         markwonVersion = "4.6.2"
-        prismVersion = "2.0.0"
-        androidLibraryVersion = "master-SNAPSHOT"
         mockitoVersion = "4.11.0"
         mockitoKotlinVersion = "4.1.0"
-        mockkVersion = "1.13.3"
-        espressoVersion = "3.5.1"
-        workRuntime = "2.8.1"
-        fidoVersion = "4.1.0-patch1"
-        checkerVersion = "3.21.2"
-        exoplayerVersion = "2.18.7"
-        documentScannerVersion = "1.0.1"
-        roomVersion = "2.5.1"
+        mockkVersion = "1.13.16"
+        prismVersion = "2.0.0"
+        roomVersion = "2.6.1"
+        workRuntime = "2.10.0"
 
         ciBuild = System.getenv("CI") == "true"
+        shotTest = System.getenv("SHOT_TEST") == "true"
     }
 }
 
 subprojects {
     buildscript {
         repositories {
-            gradlePluginPortal()
             google()
             mavenCentral()
+            gradlePluginPortal()
         }
     }
     repositories {
@@ -39,11 +49,11 @@ subprojects {
     }
 }
 
-task clean(type: Delete) {
+tasks.register('clean', Delete) {
     delete rootProject.buildDir
 }
 
-task installGitHooks(type: Copy, group: "development") {
+tasks.register('installGitHooks', Copy) {
     def sourceFolder = "${rootProject.projectDir}/scripts/hooks"
     def destFolder = "${rootProject.projectDir}/.git/hooks"
 

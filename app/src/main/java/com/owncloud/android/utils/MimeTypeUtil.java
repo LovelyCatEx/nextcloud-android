@@ -1,33 +1,27 @@
 /*
- * ownCloud Android client application
- * <p>
- * @author TSI-mc
- * Copyright (C) 2016 ownCloud Inc.
- * Copyright (C) 2023 TSI-mc
- * <p>
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2,
- * as published by the Free Software Foundation.
- * <p>
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * <p>
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * Nextcloud - Android Client
+ *
+ * SPDX-FileCopyrightText: 2023 TSI-mc
+ * SPDX-FileCopyrightText: 2023 alperozturk <alper.ozturk@nextcloud.com>
+ * SPDX-FileCopyrightText: 2022 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2018-2022 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2016 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
-
 package com.owncloud.android.utils;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.LayerDrawable;
 import android.net.Uri;
 import android.webkit.MimeTypeMap;
 
+import com.nextcloud.android.common.ui.theme.utils.ColorRole;
 import com.owncloud.android.R;
 import com.owncloud.android.datamodel.OCFile;
-import com.owncloud.android.lib.common.network.WebdavEntry;
+import com.owncloud.android.datamodel.ThumbnailsCacheManager;
 import com.owncloud.android.lib.resources.files.model.ServerFileInterface;
 import com.owncloud.android.utils.theme.ViewThemeUtils;
 
@@ -104,15 +98,35 @@ public final class MimeTypeUtil {
         if (context != null) {
             int iconId = MimeTypeUtil.getFileTypeIconId(mimetype, filename);
             Drawable icon = ContextCompat.getDrawable(context, iconId);
+            if (icon == null) {
+                return null;
+            }
 
             if (R.drawable.file_zip == iconId) {
-                viewThemeUtils.platform.tintPrimaryDrawable(context, icon);
+                viewThemeUtils.platform.tintDrawable(context, icon, ColorRole.PRIMARY);
             }
 
             return icon;
         } else {
             return null;
         }
+    }
+
+    public static Drawable getIcon(String localPath, Context context, ViewThemeUtils viewThemeUtils) {
+        if (context == null) return null;
+
+        String mimeType = getMimeTypeFromPath(localPath);
+        List<String> possibleMimeTypes = Collections.singletonList(mimeType);
+        int iconId = determineIconIdByMimeTypeList(possibleMimeTypes);
+
+        Drawable result = ContextCompat.getDrawable(context, iconId);
+        if (result == null) return null;
+
+        if (R.drawable.file_zip == iconId) {
+            viewThemeUtils.platform.tintDrawable(context, result, ColorRole.PRIMARY);
+        }
+
+        return result;
     }
 
     /**
@@ -134,54 +148,70 @@ public final class MimeTypeUtil {
     }
 
     /**
-     * Returns the resource identifier of an image to use as icon associated to a type of folder.
+     * Returns a drawable representing a file or folder.
+     * <p>
      *
-     * @param isSharedViaUsers flag if the folder is shared via the users system
-     * @param isSharedViaLink  flag if the folder is publicly shared via link
-     * @param isEncrypted      flag if the folder is encrypted
-     * @return Identifier of an image resource.
+     * - For folders: Returns a folder icon. If an overlay is needed, it includes an overlay icon on the folder.
+     *
+     * <p>
+     * - For files: Returns the file's thumbnail if it exists. Otherwise, it provides a thumbnail based on the file's MIME type.
+     *
+     * @return A drawable for the file or folder.
      */
-    public static Drawable getFolderTypeIcon(boolean isSharedViaUsers,
-                                             boolean isSharedViaLink,
-                                             boolean isEncrypted,
-                                             boolean isAutoUploadFolder,
-                                             boolean isGroupFolder,
-                                             WebdavEntry.MountType mountType,
-                                             Context context,
-                                             ViewThemeUtils viewThemeUtils) {
-        int drawableId;
-
-        if (WebdavEntry.MountType.GROUP == mountType || isGroupFolder) {
-            drawableId = R.drawable.folder_group;
-        } else if (isSharedViaLink && !isEncrypted) {
-            drawableId = R.drawable.folder_shared_link;
-        } else if (isSharedViaUsers) {
-            drawableId = R.drawable.folder_shared_users;
-        } else if (isEncrypted) {
-            drawableId = R.drawable.folder_encrypted;
-        } else if (isAutoUploadFolder) {
-            drawableId = R.drawable.folder_auto_upload;
-        } else if (WebdavEntry.MountType.EXTERNAL == mountType) {
-            drawableId = R.drawable.folder_external;
-        } else {
-            drawableId = R.drawable.folder;
+    public static Drawable getOCFileIcon(OCFile file, Context context, ViewThemeUtils viewThemeUtils, boolean isAutoUpload, boolean isDarkModeActive) {
+        if (file.isFolder()) {
+            Integer overlayIconId = file.getFileOverlayIconId(isAutoUpload);
+            return MimeTypeUtil.getFolderIcon(isDarkModeActive, overlayIconId, context, viewThemeUtils);
         }
 
-        Drawable drawable = ContextCompat.getDrawable(context, drawableId);
-        viewThemeUtils.platform.tintPrimaryDrawable(context, drawable);
+        if (!(MimeTypeUtil.isImage(file) || MimeTypeUtil.isVideo(file)) || file.getRemoteId() == null) {
+            return MimeTypeUtil.getFileTypeIcon(file.getMimeType(), file.getFileName(), context, viewThemeUtils);
+        }
+
+        Bitmap thumbnail = ThumbnailsCacheManager.getBitmapFromDiskCache(ThumbnailsCacheManager.PREFIX_THUMBNAIL + file.getRemoteId());
+        if (thumbnail == null || file.isUpdateThumbnailNeeded()) {
+            return MimeTypeUtil.getFileTypeIcon(file.getMimeType(), file.getFileName(), context, viewThemeUtils);
+        }
+
+        Drawable background = new BitmapDrawable(context.getResources(), thumbnail);
+        if (!MimeTypeUtil.isVideo(file)) {
+            return background;
+        }
+
+        Drawable videoOverlay = ContextCompat.getDrawable(context, R.drawable.video_white);
+        if (videoOverlay == null) {
+            return background;
+        }
+
+        return DrawableUtil.INSTANCE.addDrawableAsOverlay(background, videoOverlay);
+    }
+
+    public static Drawable getDefaultFolderIcon(Context context, ViewThemeUtils viewThemeUtils) {
+        Drawable drawable = ContextCompat.getDrawable(context, R.drawable.folder);
+        assert(drawable != null);
+
+        viewThemeUtils.platform.tintDrawable(context, drawable, ColorRole.PRIMARY);
         return drawable;
     }
 
-    public static Drawable getDefaultFolderIcon(Context context,
-                                                ViewThemeUtils viewThemeUtils) {
-        return getFolderTypeIcon(false,
-                                 false,
-                                 false,
-                                 false,
-                                 false,
-                                 WebdavEntry.MountType.INTERNAL,
-                                 context,
-                                 viewThemeUtils);
+    public static LayerDrawable getFolderIcon(boolean isDarkModeActive, Integer overlayIconId, Context context, ViewThemeUtils viewThemeUtils) {
+        Drawable folderDrawable = getDefaultFolderIcon(context, viewThemeUtils);
+        assert(folderDrawable != null);
+
+        LayerDrawable folderLayerDrawable = new LayerDrawable(new Drawable[] { folderDrawable } );
+
+        if (overlayIconId == null) {
+            return folderLayerDrawable;
+        }
+
+        Drawable overlayDrawable = ContextCompat.getDrawable(context, overlayIconId);
+        assert(overlayDrawable != null);
+
+        if (isDarkModeActive) {
+            overlayDrawable = DrawableUtil.INSTANCE.changeColor(overlayDrawable, R.color.dark);
+        }
+
+        return DrawableUtil.INSTANCE.addDrawableAsOverlay(folderDrawable, overlayDrawable);
     }
 
     /**

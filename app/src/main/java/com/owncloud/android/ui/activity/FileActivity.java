@@ -1,28 +1,17 @@
 /*
- *   ownCloud Android client application
+ * Nextcloud - Android Client
  *
- *   @author David A. Velasco
- *   @author Chris Narkiewicz
- *   @author TSI-mc
- *   Copyright (C) 2011  Bartek Przybylski
- *   Copyright (C) 2016 ownCloud Inc.
- *   Copyright (C) 2019 Chris Narkiewicz <hello@ezaquarii.com>
- *   Copyright (C) 2021 TSI-mc
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License version 2,
- *   as published by the Free Software Foundation.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
+ * SPDX-FileCopyrightText: 2021 TSI-mc
+ * SPDX-FileCopyrightText: 2022 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2017-2023 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2019 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-FileCopyrightText: 2018 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-FileCopyrightText: 2016 ownCloud Inc.
+ * SPDX-FileCopyrightText: 2015 María Asensio Valverde <masensio@solidgear.es>
+ * SPDX-FileCopyrightText: 2013 David A. Velasco <dvelasco@solidgear.es>
+ * SPDX-FileCopyrightText: 2011 Bartek Przybylski
+ * SPDX-License-Identifier: GPL-2.0-only AND (AGPL-3.0-or-later OR GPL-2.0-only)
  */
-
 package com.owncloud.android.ui.activity;
 
 import android.accounts.Account;
@@ -32,8 +21,10 @@ import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -44,18 +35,23 @@ import com.google.android.material.snackbar.Snackbar;
 import com.nextcloud.client.account.User;
 import com.nextcloud.client.account.UserAccountManager;
 import com.nextcloud.client.jobs.BackgroundJobManager;
+import com.nextcloud.client.jobs.download.FileDownloadWorker;
+import com.nextcloud.client.jobs.upload.FileUploadHelper;
 import com.nextcloud.client.network.ConnectivityService;
+import com.nextcloud.receiver.NetworkChangeListener;
+import com.nextcloud.receiver.NetworkChangeReceiver;
 import com.nextcloud.utils.EditorUtils;
+import com.nextcloud.utils.extensions.ActivityExtensionsKt;
+import com.nextcloud.utils.extensions.BundleExtensionsKt;
+import com.nextcloud.utils.extensions.FileExtensionsKt;
+import com.nextcloud.utils.extensions.IntentExtensionsKt;
+import com.nextcloud.utils.mdm.MDMConfig;
 import com.owncloud.android.MainApp;
 import com.owncloud.android.R;
 import com.owncloud.android.authentication.AuthenticatorActivity;
 import com.owncloud.android.datamodel.ArbitraryDataProvider;
 import com.owncloud.android.datamodel.ArbitraryDataProviderImpl;
 import com.owncloud.android.datamodel.OCFile;
-import com.owncloud.android.files.services.FileDownloader;
-import com.owncloud.android.files.services.FileDownloader.FileDownloaderBinder;
-import com.owncloud.android.files.services.FileUploader;
-import com.owncloud.android.files.services.FileUploader.FileUploaderBinder;
 import com.owncloud.android.lib.common.OwnCloudAccount;
 import com.owncloud.android.lib.common.OwnCloudClient;
 import com.owncloud.android.lib.common.OwnCloudClientManagerFactory;
@@ -66,11 +62,13 @@ import com.owncloud.android.lib.common.operations.RemoteOperation;
 import com.owncloud.android.lib.common.operations.RemoteOperationResult;
 import com.owncloud.android.lib.common.operations.RemoteOperationResult.ResultCode;
 import com.owncloud.android.lib.common.utils.Log_OC;
+import com.owncloud.android.lib.resources.files.model.ServerFileInterface;
 import com.owncloud.android.lib.resources.shares.OCShare;
 import com.owncloud.android.lib.resources.shares.ShareType;
 import com.owncloud.android.operations.CreateShareViaLinkOperation;
 import com.owncloud.android.operations.CreateShareWithShareeOperation;
 import com.owncloud.android.operations.GetSharesForFileOperation;
+import com.owncloud.android.operations.SetFilesDownloadLimitOperation;
 import com.owncloud.android.operations.SynchronizeFileOperation;
 import com.owncloud.android.operations.SynchronizeFolderOperation;
 import com.owncloud.android.operations.UnshareOperation;
@@ -78,6 +76,7 @@ import com.owncloud.android.operations.UpdateNoteForShareOperation;
 import com.owncloud.android.operations.UpdateShareInfoOperation;
 import com.owncloud.android.operations.UpdateSharePermissionsOperation;
 import com.owncloud.android.operations.UpdateShareViaLinkOperation;
+import com.owncloud.android.providers.UsersAndGroupsSearchConfig;
 import com.owncloud.android.providers.UsersAndGroupsSearchProvider;
 import com.owncloud.android.services.OperationsService;
 import com.owncloud.android.services.OperationsService.OperationsServiceBinder;
@@ -114,15 +113,15 @@ import androidx.fragment.app.FragmentTransaction;
 
 import static com.owncloud.android.ui.activity.FileDisplayActivity.TAG_PUBLIC_LINK;
 
-
 /**
  * Activity with common behaviour for activities handling {@link OCFile}s in ownCloud {@link Account}s .
  */
 public abstract class FileActivity extends DrawerActivity
-        implements OnRemoteOperationListener, ComponentsGetter, SslUntrustedCertDialog.OnSslUntrustedCertListener,
-        LoadingVersionNumberTask.VersionDevInterface, FileDetailSharingFragment.OnEditShareListener {
+    implements OnRemoteOperationListener, ComponentsGetter, SslUntrustedCertDialog.OnSslUntrustedCertListener,
+    LoadingVersionNumberTask.VersionDevInterface, FileDetailSharingFragment.OnEditShareListener, NetworkChangeListener {
 
     public static final String EXTRA_FILE = "com.owncloud.android.ui.activity.FILE";
+    public static final String EXTRA_LIVE_PHOTO_FILE = "com.owncloud.android.ui.activity.LIVE.PHOTO.FILE";
     public static final String EXTRA_USER = "com.owncloud.android.ui.activity.USER";
     public static final String EXTRA_FROM_NOTIFICATION = "com.owncloud.android.ui.activity.FROM_NOTIFICATION";
     public static final String APP_OPENED_COUNT = "APP_OPENED_COUNT";
@@ -145,7 +144,7 @@ public abstract class FileActivity extends DrawerActivity
     private static final String DIALOG_UNTRUSTED_CERT = "DIALOG_UNTRUSTED_CERT";
     private static final String DIALOG_CERT_NOT_SAVED = "DIALOG_CERT_NOT_SAVED";
 
-     /** Main {@link OCFile} handled by the activity.*/
+    /** Main {@link OCFile} handled by the activity.*/
     private OCFile mFile;
 
     /** Flag to signal if the activity is launched by a notification */
@@ -162,16 +161,13 @@ public abstract class FileActivity extends DrawerActivity
 
     private boolean mResumed;
 
-    protected FileDownloaderBinder mDownloaderBinder;
-    protected FileUploaderBinder mUploaderBinder;
-    private ServiceConnection mDownloadServiceConnection;
-    private ServiceConnection mUploadServiceConnection;
+    protected FileDownloadWorker.FileDownloadProgressListener fileDownloadProgressListener;
+    protected FileUploadHelper fileUploadHelper = FileUploadHelper.Companion.instance();
 
     @Inject
     UserAccountManager accountManager;
 
-    @Inject
-    ConnectivityService connectivityService;
+    @Inject public ConnectivityService connectivityService;
 
     @Inject
     BackgroundJobManager backgroundJobManager;
@@ -179,10 +175,24 @@ public abstract class FileActivity extends DrawerActivity
     @Inject
     EditorUtils editorUtils;
 
+    @Inject
+    UsersAndGroupsSearchConfig usersAndGroupsSearchConfig;
+
+    @Inject
+    ArbitraryDataProvider arbitraryDataProvider;
+
+    private NetworkChangeReceiver networkChangeReceiver;
+
+    private void registerNetworkChangeReceiver() {
+        IntentFilter filter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
+        registerReceiver(networkChangeReceiver, filter);
+    }
+
     @Override
-    public void showFiles(boolean onDeviceOnly) {
+    public void showFiles(boolean onDeviceOnly, boolean personalFiles) {
         // must be specialized in subclasses
         MainApp.showOnlyFilesOnDevice(onDeviceOnly);
+        MainApp.showOnlyPersonalFiles(personalFiles);
         if (onDeviceOnly) {
             setupToolbar();
         } else {
@@ -200,11 +210,14 @@ public abstract class FileActivity extends DrawerActivity
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        networkChangeReceiver = new NetworkChangeReceiver(this, connectivityService);
+        usersAndGroupsSearchConfig.reset();
         mHandler = new Handler();
         mFileOperationsHelper = new FileOperationsHelper(this, getUserAccountManager(), connectivityService, editorUtils);
+        User user;
 
         if (savedInstanceState != null) {
-            mFile = savedInstanceState.getParcelable(FileActivity.EXTRA_FILE);
+            mFile = BundleExtensionsKt.getParcelableArgument(savedInstanceState, FileActivity.EXTRA_FILE, OCFile.class);
             mFromNotification = savedInstanceState.getBoolean(FileActivity.EXTRA_FROM_NOTIFICATION);
             mFileOperationsHelper.setOpIdWaitingFor(
                 savedInstanceState.getLong(KEY_WAITING_FOR_OP_ID, Long.MAX_VALUE)
@@ -214,29 +227,29 @@ public abstract class FileActivity extends DrawerActivity
                 viewThemeUtils.files.themeActionBar(this, actionBar, savedInstanceState.getString(KEY_ACTION_BAR_TITLE));
             }
         } else {
-            User user = getIntent().getParcelableExtra(FileActivity.EXTRA_USER);
-            mFile = getIntent().getParcelableExtra(FileActivity.EXTRA_FILE);
+            user = IntentExtensionsKt.getParcelableArgument(getIntent(), FileActivity.EXTRA_USER, User.class);
+            mFile = IntentExtensionsKt.getParcelableArgument(getIntent(), FileActivity.EXTRA_FILE, OCFile.class);
             mFromNotification = getIntent().getBooleanExtra(FileActivity.EXTRA_FROM_NOTIFICATION,
-                    false);
+                                                            false);
+
             if (user != null) {
                 setUser(user);
             }
         }
 
-
         mOperationsServiceConnection = new OperationsServiceConnection();
         bindService(new Intent(this, OperationsService.class), mOperationsServiceConnection,
-                Context.BIND_AUTO_CREATE);
+                    Context.BIND_AUTO_CREATE);
+        registerNetworkChangeReceiver();
+    }
 
-        mDownloadServiceConnection = newTransferenceServiceConnection();
-        if (mDownloadServiceConnection != null) {
-            bindService(new Intent(this, FileDownloader.class), mDownloadServiceConnection,
-                    Context.BIND_AUTO_CREATE);
-        }
-        mUploadServiceConnection = newTransferenceServiceConnection();
-        if (mUploadServiceConnection != null) {
-            bindService(new Intent(this, FileUploader.class), mUploadServiceConnection,
-                    Context.BIND_AUTO_CREATE);
+    @Override
+    public void networkAndServerConnectionListener(boolean isNetworkAndServerAvailable) {
+        if (isNetworkAndServerAvailable) {
+            hideInfoBox();
+            refreshList();
+        } else {
+            showInfoBox(R.string.offline_mode);
         }
     }
 
@@ -270,14 +283,8 @@ public abstract class FileActivity extends DrawerActivity
             unbindService(mOperationsServiceConnection);
             mOperationsServiceBinder = null;
         }
-        if (mDownloadServiceConnection != null) {
-            unbindService(mDownloadServiceConnection);
-            mDownloadServiceConnection = null;
-        }
-        if (mUploadServiceConnection != null) {
-            unbindService(mUploadServiceConnection);
-            mUploadServiceConnection = null;
-        }
+
+        unregisterReceiver(networkChangeReceiver);
 
         super.onDestroy();
     }
@@ -285,6 +292,7 @@ public abstract class FileActivity extends DrawerActivity
     @Override
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
+        FileExtensionsKt.logFileSize(mFile, TAG);
         outState.putParcelable(FileActivity.EXTRA_FILE, mFile);
         outState.putBoolean(FileActivity.EXTRA_FROM_NOTIFICATION, mFromNotification);
         outState.putLong(KEY_WAITING_FOR_OP_ID, mFileOperationsHelper.getOpIdWaitingFor());
@@ -356,11 +364,11 @@ public abstract class FileActivity extends DrawerActivity
         dismissLoadingDialog();
 
         if (!result.isSuccess() && (
-                result.getCode() == ResultCode.UNAUTHORIZED ||
+            result.getCode() == ResultCode.UNAUTHORIZED ||
                 (result.isException() && result.getException() instanceof AuthenticatorException)
         )) {
 
-            requestCredentialsUpdate(this);
+            requestCredentialsUpdate();
 
             if (result.getCode() == ResultCode.UNAUTHORIZED) {
                 DisplayUtils.showSnackMessage(
@@ -384,8 +392,8 @@ public abstract class FileActivity extends DrawerActivity
 
             } else if (result.getCode() != ResultCode.CANCELLED) {
                 DisplayUtils.showSnackMessage(
-                        this, ErrorMessageAdapter.getErrorCauseMessage(result, operation, getResources())
-                );
+                    this, ErrorMessageAdapter.getErrorCauseMessage(result, operation, getResources())
+                                             );
             }
 
         } else if (operation instanceof SynchronizeFileOperation) {
@@ -407,7 +415,7 @@ public abstract class FileActivity extends DrawerActivity
             onCreateShareViaLinkOperationFinish((CreateShareViaLinkOperation) operation, result);
         } else if (operation instanceof CreateShareWithShareeOperation) {
             onUpdateShareInformation(result, R.string.sharee_add_failed);
-        } else if (operation instanceof UpdateShareViaLinkOperation || operation instanceof UpdateShareInfoOperation) {
+        } else if (operation instanceof UpdateShareViaLinkOperation || operation instanceof UpdateShareInfoOperation || operation instanceof SetFilesDownloadLimitOperation) {
             onUpdateShareInformation(result, R.string.updating_share_failed);
         } else if (operation instanceof UpdateSharePermissionsOperation) {
             onUpdateShareInformation(result, R.string.updating_share_failed);
@@ -424,34 +432,24 @@ public abstract class FileActivity extends DrawerActivity
      *
      * Equivalent to call requestCredentialsUpdate(context, null);
      *
-     * @param context   Android Context needed to access the {@link AccountManager}. Received as a parameter
-     *                  to make the method accessible to {@link android.content.BroadcastReceiver}s.
      */
-    protected void requestCredentialsUpdate(Context context) {
-        requestCredentialsUpdate(context, null);
+    protected void requestCredentialsUpdate() {
+        requestCredentialsUpdate(null);
     }
 
     /**
      * Invalidates the credentials stored for the given OC account and requests new credentials to the user,
      * navigating to {@link AuthenticatorActivity}
      *
-     * @param context   Android Context needed to access the {@link AccountManager}. Received as a parameter
-     *                  to make the method accessible to {@link android.content.BroadcastReceiver}s.
      * @param account   Stored OC account to request credentials update for. If null, current account will
      *                  be used.
      */
-    protected void requestCredentialsUpdate(Context context, Account account) {
+    protected void requestCredentialsUpdate(Account account) {
         if (account == null) {
             account = getAccount();
         }
 
-        boolean remoteWipeSupported = accountManager.getServerVersion(account).isRemoteWipeSupported();
-
-        if (remoteWipeSupported) {
-            new CheckRemoteWipeTask(backgroundJobManager, account, new WeakReference<>(this)).execute();
-        } else {
-            performCredentialsUpdate(account, context);
-        }
+        new CheckRemoteWipeTask(backgroundJobManager, account, new WeakReference<>(this)).execute();
     }
 
     public void performCredentialsUpdate(Account account, Context context) {
@@ -516,7 +514,7 @@ public abstract class FileActivity extends DrawerActivity
         } else {
             if (!operation.transferWasRequested()) {
                 DisplayUtils.showSnackMessage(this, ErrorMessageAdapter.getErrorCauseMessage(result,
-                        operation, getResources()));
+                                                                                             operation, getResources()));
             }
             supportInvalidateOptionsMenu();
         }
@@ -535,30 +533,41 @@ public abstract class FileActivity extends DrawerActivity
      * Show loading dialog
      */
     public void showLoadingDialog(String message) {
-        // grant that only one waiting dialog is shown
         dismissLoadingDialog();
-        // Construct dialog
-        Fragment frag = getSupportFragmentManager().findFragmentByTag(DIALOG_WAIT_TAG);
-        if (frag == null) {
-            Log_OC.d(TAG, "show loading dialog");
-            LoadingDialog loading = LoadingDialog.newInstance(message);
-            FragmentManager fm = getSupportFragmentManager();
-            FragmentTransaction ft = fm.beginTransaction();
-            loading.show(ft, DIALOG_WAIT_TAG);
-            fm.executePendingTransactions();
-        }
+
+        runOnUiThread(() -> {
+            FragmentManager fragmentManager = getSupportFragmentManager();
+            Fragment fragment = fragmentManager.findFragmentByTag(DIALOG_WAIT_TAG);
+            if (fragment == null) {
+                Log_OC.d(TAG, "show loading dialog");
+                LoadingDialog loadingDialogFragment = LoadingDialog.newInstance(message);
+                FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
+                boolean isDialogFragmentReady = ActivityExtensionsKt.isDialogFragmentReady(this, loadingDialogFragment);
+                if (isDialogFragmentReady) {
+                    fragmentTransaction.add(loadingDialogFragment, DIALOG_WAIT_TAG);
+                    fragmentTransaction.commitNow();
+                }
+            }
+        });
     }
 
     /**
      * Dismiss loading dialog
      */
     public void dismissLoadingDialog() {
-        Fragment frag = getSupportFragmentManager().findFragmentByTag(DIALOG_WAIT_TAG);
-        if (frag != null) {
-            Log_OC.d(TAG, "dismiss loading dialog");
-            LoadingDialog loading = (LoadingDialog) frag;
-            loading.dismissAllowingStateLoss();
-        }
+        runOnUiThread(() -> {
+            FragmentManager fragmentManager = getSupportFragmentManager();
+            Fragment fragment = fragmentManager.findFragmentByTag(DIALOG_WAIT_TAG);
+            if (fragment != null) {
+                Log_OC.d(TAG, "dismiss loading dialog");
+                LoadingDialog loadingDialogFragment = (LoadingDialog) fragment;
+                boolean isDialogFragmentReady = ActivityExtensionsKt.isDialogFragmentReady(this, loadingDialogFragment);
+                if (isDialogFragmentReady) {
+                    loadingDialogFragment.dismiss();
+                    fragmentManager.executePendingTransactions();
+                }
+            }
+        });
     }
 
     private void doOnResumeAndBound() {
@@ -566,7 +575,7 @@ public abstract class FileActivity extends DrawerActivity
         long waitingForOpId = mFileOperationsHelper.getOpIdWaitingFor();
         if (waitingForOpId <= Integer.MAX_VALUE) {
             boolean wait = mOperationsServiceBinder.dispatchResultIfFinished((int)waitingForOpId,
-                    this);
+                                                                             this);
             if (!wait ) {
                 dismissLoadingDialog();
             }
@@ -606,13 +615,13 @@ public abstract class FileActivity extends DrawerActivity
     }
 
     @Override
-    public FileDownloaderBinder getFileDownloaderBinder() {
-        return mDownloaderBinder;
+    public FileDownloadWorker.FileDownloadProgressListener getFileDownloadProgressListener() {
+        return fileDownloadProgressListener;
     }
 
     @Override
-    public FileUploaderBinder getFileUploaderBinder() {
-        return mUploaderBinder;
+    public FileUploadHelper getFileUploaderHelper() {
+        return fileUploadHelper;
     }
 
     public OCFile getCurrentDir() {
@@ -639,7 +648,7 @@ public abstract class FileActivity extends DrawerActivity
     public void onFailedSavingCertificate() {
         ConfirmationDialogFragment dialog = ConfirmationDialogFragment.newInstance(
             R.string.ssl_validator_not_saved, new String[]{}, 0, R.string.common_ok, -1, -1
-        );
+                                                                                  );
         dialog.show(getSupportFragmentManager(), DIALOG_CERT_NOT_SAVED);
     }
 
@@ -680,20 +689,15 @@ public abstract class FileActivity extends DrawerActivity
             DisplayUtils.showSnackMessage(activity, R.string.dev_version_no_information_available, Snackbar.LENGTH_LONG);
         }
         if (latestVersion > currentVersion) {
+            String devApkLink = activity.getString(R.string.dev_link) + latestVersion + ".apk";
             if (openDirectly) {
-                String devApkLink = (String) activity.getText(R.string.dev_link) + latestVersion + ".apk";
-                Uri uriUrl = Uri.parse(devApkLink);
-                Intent intent = new Intent(Intent.ACTION_VIEW, uriUrl);
-                DisplayUtils.startIntentIfAppAvailable(intent, activity, R.string.no_browser_available);
+                DisplayUtils.startLinkIntent(activity, devApkLink);
             } else {
                 Snackbar.make(activity.findViewById(android.R.id.content), R.string.dev_version_new_version_available,
-                        Snackbar.LENGTH_LONG)
-                        .setAction(activity.getString(R.string.version_dev_download), v -> {
-                            String devApkLink = (String) activity.getText(R.string.dev_link) + latestVersion + ".apk";
-                            Uri uriUrl = Uri.parse(devApkLink);
-                            Intent intent = new Intent(Intent.ACTION_VIEW, uriUrl);
-                            DisplayUtils.startIntentIfAppAvailable(intent, activity, R.string.no_browser_available);
-                        }).show();
+                              Snackbar.LENGTH_LONG)
+                    .setAction(activity.getString(R.string.version_dev_download), v -> {
+                        DisplayUtils.startLinkIntent(activity, devApkLink);
+                    }).show();
             }
         } else {
             if (!inBackground) {
@@ -706,15 +710,17 @@ public abstract class FileActivity extends DrawerActivity
                                             OCFile file,
                                             String link,
                                             final ViewThemeUtils viewThemeUtils) {
-        ClipboardUtil.copyToClipboard(activity, link, false);
-        Snackbar snackbar = Snackbar.make(activity.findViewById(android.R.id.content), R.string.clipboard_text_copied,
-                                          Snackbar.LENGTH_LONG)
-            .setAction(R.string.share, v -> showShareLinkDialog(activity, file, link));
-        viewThemeUtils.material.themeSnackbar(snackbar);
-        snackbar.show();
+        if (MDMConfig.INSTANCE.shareViaLink(activity) && MDMConfig.INSTANCE.clipBoardSupport(activity)) {
+            ClipboardUtil.copyToClipboard(activity, link, false);
+            Snackbar snackbar = Snackbar.make(activity.findViewById(android.R.id.content), R.string.clipboard_text_copied,
+                                              Snackbar.LENGTH_LONG)
+                .setAction(R.string.share, v -> showShareLinkDialog(activity, file, link));
+            viewThemeUtils.material.themeSnackbar(snackbar);
+            snackbar.show();
+        }
     }
 
-    public static void showShareLinkDialog(FileActivity activity, OCFile file, String link) {
+    public static void showShareLinkDialog(FileActivity activity, ServerFileInterface file, String link) {
         // Create dialog to allow the user choose an app to send the link
         Intent intentToShareLink = new Intent(Intent.ACTION_SEND);
 
@@ -784,6 +790,15 @@ public abstract class FileActivity extends DrawerActivity
         }
     }
 
+    public void refreshList() {
+        final Fragment fragment = getSupportFragmentManager().findFragmentByTag(FileDisplayActivity.TAG_LIST_OF_FILES);
+        if (fragment instanceof OCFileListFragment listFragment) {
+            listFragment.onRefresh();
+        } else if (fragment instanceof FileDetailFragment detailFragment) {
+            detailFragment.goBackToOCFileListFragment();
+        }
+    }
+
     private void onCreateShareViaLinkOperationFinish(CreateShareViaLinkOperation operation,
                                                      RemoteOperationResult result) {
         FileDetailSharingFragment sharingFragment = getShareFileFragment();
@@ -797,11 +812,14 @@ public abstract class FileActivity extends DrawerActivity
             String link = "";
             OCFile file = null;
             for (Object object : result.getData()) {
-                OCShare shareLink = (OCShare) object;
-                if (TAG_PUBLIC_LINK.equalsIgnoreCase(shareLink.getShareType().name())) {
-                    link = shareLink.getShareLink();
-                    file = getStorageManager().getFileByPath(shareLink.getPath());
-                    break;
+                if (object instanceof OCShare shareLink) {
+                    ShareType shareType = shareLink.getShareType();
+
+                    if (shareType != null && TAG_PUBLIC_LINK.equalsIgnoreCase(shareType.name())) {
+                        link = shareLink.getShareLink();
+                        file = getStorageManager().getFileByEncryptedRemotePath(shareLink.getPath());
+                        break;
+                    }
                 }
             }
 
@@ -811,8 +829,12 @@ public abstract class FileActivity extends DrawerActivity
                 sharingFragment.onUpdateShareInformation(result, file);
             }
 
-            if (fileListFragment instanceof OCFileListFragment && file != null) {
-                ((OCFileListFragment) fileListFragment).updateOCFile(file);
+            if (fileListFragment instanceof OCFileListFragment ocFileListFragment && file != null) {
+                if (ocFileListFragment.getAdapterFiles().contains(file)) {
+                    ocFileListFragment.updateOCFile(file);
+                } else {
+                    DisplayUtils.showSnackMessage(this, R.string.file_activity_shared_file_cannot_be_updated);
+                }
             }
         } else {
             // Detect Failure (403) --> maybe needs password
@@ -862,8 +884,7 @@ public abstract class FileActivity extends DrawerActivity
 
         if (fragment instanceof FileDetailSharingFragment) {
             return (FileDetailSharingFragment) fragment;
-        } else if (fragment instanceof FileDetailFragment) {
-            FileDetailFragment fileDetailFragment = (FileDetailFragment) fragment;
+        } else if (fragment instanceof FileDetailFragment fileDetailFragment) {
             return fileDetailFragment.getFileDetailSharingFragment();
         } else {
             return null;
@@ -880,7 +901,7 @@ public abstract class FileActivity extends DrawerActivity
             String shareWith = dataString.substring(dataString.lastIndexOf('/') + 1);
 
             ArrayList<String> existingSharees = new ArrayList<>();
-            for (OCShare share : getStorageManager().getSharesWithForAFile(getFile().getRemotePath(),
+            for (OCShare share : getStorageManager().getSharesWithForAFile(getFileFromDetailFragment().getRemotePath(),
                                                                            getAccount().name)) {
                 existingSharees.add(share.getShareType() + "_" + share.getShareWith());
             }
@@ -890,8 +911,21 @@ public abstract class FileActivity extends DrawerActivity
 
             if (!existingSharees.contains(shareType + "_" + shareWith)) {
                 doShareWith(shareWith, shareType);
+            } else {
+                DisplayUtils.showSnackMessage(this, getString(R.string.sharee_already_added_to_file));
             }
         }
+    }
+
+    /**
+     * returns the file that is selected for sharing, getFile() only returns the containing folder
+     */
+    private OCFile getFileFromDetailFragment() {
+        FileDetailFragment fragment = getFileDetailFragment();
+        if (fragment != null) {
+            return fragment.getFile();
+        }
+        return getFile();
     }
 
     /**
@@ -903,7 +937,9 @@ public abstract class FileActivity extends DrawerActivity
     protected void doShareWith(String shareeName, ShareType shareType) {
         FileDetailFragment fragment = getFileDetailFragment();
         if (fragment != null) {
-            fragment.initiateSharingProcess(shareeName, shareType);
+            fragment.initiateSharingProcess(shareeName,
+                                            shareType,
+                                            usersAndGroupsSearchConfig.getSearchOnlyUsers());
         }
     }
 

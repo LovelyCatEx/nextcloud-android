@@ -8,18 +8,7 @@
  * Copyright (C) 2018 Andy Scherzinger
  * Copyright (C) 2020 Chris Narkiewicz <hello@ezaquarii.com>
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU AFFERO GENERAL PUBLIC LICENSE
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU AFFERO GENERAL PUBLIC LICENSE for more details.
- *
- * You should have received a copy of the GNU Affero General Public
- * License along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
 package com.nextcloud.client.jobs
 
@@ -43,6 +32,7 @@ import com.nextcloud.client.account.UserAccountManager
 import com.nextcloud.client.core.Clock
 import com.nextcloud.client.preferences.AppPreferences
 import com.nextcloud.client.preferences.AppPreferencesImpl
+import com.nextcloud.utils.BuildHelper
 import com.owncloud.android.MainApp
 import com.owncloud.android.R
 import com.owncloud.android.datamodel.ArbitraryDataProvider
@@ -52,7 +42,8 @@ import com.owncloud.android.datamodel.MediaFoldersModel
 import com.owncloud.android.datamodel.MediaProvider
 import com.owncloud.android.datamodel.SyncedFolderProvider
 import com.owncloud.android.lib.common.utils.Log_OC
-import com.owncloud.android.ui.activity.ManageAccountsActivity.PENDING_FOR_REMOVAL
+import com.owncloud.android.ui.activity.FileDisplayActivity
+import com.owncloud.android.ui.activity.ManageAccountsActivity
 import com.owncloud.android.ui.activity.SyncedFoldersActivity
 import com.owncloud.android.ui.notifications.NotificationUtils
 import com.owncloud.android.utils.SyncedFolderUtils
@@ -105,12 +96,19 @@ class MediaFoldersDetectionWork constructor(
         )
         val imageMediaFolderPaths: MutableList<String> = ArrayList()
         val videoMediaFolderPaths: MutableList<String> = ArrayList()
+
         for (imageMediaFolder in imageMediaFolders) {
-            imageMediaFolderPaths.add(imageMediaFolder.absolutePath)
+            imageMediaFolder.absolutePath?.let {
+                imageMediaFolderPaths.add(it)
+            }
         }
+
         for (videoMediaFolder in videoMediaFolders) {
-            imageMediaFolderPaths.add(videoMediaFolder.absolutePath)
+            videoMediaFolder.absolutePath?.let {
+                imageMediaFolderPaths.add(it)
+            }
         }
+
         val arbitraryDataString = arbitraryDataProvider.getValue(ACCOUNT_NAME_GLOBAL, KEY_MEDIA_FOLDERS)
         if (!TextUtils.isEmpty(arbitraryDataString)) {
             mediaFoldersModel = gson.fromJson(arbitraryDataString, MediaFoldersModel::class.java)
@@ -138,7 +136,7 @@ class MediaFoldersDetectionWork constructor(
                     val allUsers = userAccountManager.allUsers
                     val activeUsers: MutableList<User> = ArrayList()
                     for (user in allUsers) {
-                        if (!arbitraryDataProvider.getBooleanValue(user, PENDING_FOR_REMOVAL)) {
+                        if (!arbitraryDataProvider.getBooleanValue(user, ManageAccountsActivity.PENDING_FOR_REMOVAL)) {
                             activeUsers.add(user)
                         }
                     }
@@ -194,7 +192,51 @@ class MediaFoldersDetectionWork constructor(
                 gson.toJson(mediaFoldersModel)
             )
         }
+
+        // only send notification when synced folder is setup, gplay flavor and not branded client
+        @Suppress("ComplexMethod")
+        if (syncedFolderProvider.syncedFolders.isNotEmpty() &&
+            BuildHelper.isFlavourGPlay() &&
+            !preferences.isAutoUploadGPlayNotificationShown &&
+            !MainApp.isClientBranded()
+        ) {
+            sendAutoUploadNotification()
+            preferences.setAutoUploadGPlayNotificationShown(true)
+        }
+
         return Result.success()
+    }
+
+    @Suppress("MagicNumber")
+    private fun sendAutoUploadNotification() {
+        val notificationId = 326
+        val intent = Intent(context, FileDisplayActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            action = FileDisplayActivity.AUTO_UPLOAD_NOTIFICATION
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            intent,
+            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notificationBuilder = NotificationCompat.Builder(
+            context,
+            NotificationUtils.NOTIFICATION_CHANNEL_GENERAL
+        )
+            .setSmallIcon(R.drawable.notification_icon)
+            .setLargeIcon(BitmapFactory.decodeResource(context.resources, R.drawable.notification_icon))
+            .setContentTitle(context.getString(R.string.re_enable_auto_upload))
+            .setContentText(context.getString(R.string.click_to_learn_how_to_re_enable_auto_uploads))
+            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+
+        viewThemeUtils.androidx.themeNotificationCompatBuilder(context, notificationBuilder)
+
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(notificationId, notificationBuilder.build())
     }
 
     @Suppress("LongMethod")

@@ -9,18 +9,7 @@
  * Copyright (C) 2020 Nextcloud GmbH
  * Copyright (C) 2021 TSI-mc
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
 
 package com.owncloud.android.ui.adapter;
@@ -30,6 +19,8 @@ import android.graphics.PorterDuff;
 import android.text.TextUtils;
 import android.view.View;
 
+import com.nextcloud.android.lib.resources.files.FileDownloadLimit;
+import com.nextcloud.utils.mdm.MDMConfig;
 import com.owncloud.android.R;
 import com.owncloud.android.databinding.FileDetailsShareLinkShareItemBinding;
 import com.owncloud.android.lib.resources.shares.OCShare;
@@ -86,13 +77,29 @@ class LinkShareViewHolder extends RecyclerView.ViewHolder {
             viewThemeUtils.platform.colorImageViewBackgroundAndIcon(binding.icon);
         }
 
+        FileDownloadLimit downloadLimit = publicShare.getFileDownloadLimit();
+        if (downloadLimit != null && downloadLimit.getLimit() > 0) {
+            int remaining = downloadLimit.getLimit() - downloadLimit.getCount();
+            String text = context.getResources().getQuantityString(R.plurals.share_download_limit_description, remaining, remaining);
+
+            binding.subline.setText(text);
+            binding.subline.setVisibility(View.VISIBLE);
+        } else {
+            binding.subline.setVisibility(View.GONE);
+        }
+
         String permissionName = SharingMenuHelper.getPermissionName(context, publicShare);
         setPermissionName(publicShare, permissionName);
 
-        binding.copyLink.setOnClickListener(v -> listener.copyLink(publicShare));
         binding.overflowMenu.setOnClickListener(v -> listener.showSharingMenuActionSheet(publicShare));
         if (!SharingMenuHelper.isSecureFileDrop(publicShare)) {
             binding.shareByLinkContainer.setOnClickListener(v -> listener.showPermissionsDialog(publicShare));
+        }
+
+        if (MDMConfig.INSTANCE.clipBoardSupport(context)) {
+            binding.copyLink.setOnClickListener(v -> listener.copyLink(publicShare));
+        } else {
+            binding.copyLink.setVisibility(View.GONE);
         }
     }
 

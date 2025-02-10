@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# SPDX-FileCopyrightText: 2021-2024 Nextcloud GmbH and Nextcloud contributors
+# SPDX-FileCopyrightText: 2021-2023 Tobias Kaminsky <tobias@kaminsky.me>
+# SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
+
 DRONE_PULL_REQUEST=$1
 LOG_USERNAME=$2
 LOG_PASSWORD=$3
@@ -19,10 +23,10 @@ scripts/deleteOldComments.sh "master" "IT" "$DRONE_PULL_REQUEST"
 
 ./gradlew assembleGplayDebugAndroidTest
 
-scripts/wait_for_emulator.sh
+scripts/wait_for_emulator.sh || exit 1
 
 ./gradlew installGplayDebugAndroidTest
-scripts/wait_for_server.sh "server"
+scripts/wait_for_server.sh "server" || exit 1
 
 # clear logcat and start saving it to file
 adb logcat -c

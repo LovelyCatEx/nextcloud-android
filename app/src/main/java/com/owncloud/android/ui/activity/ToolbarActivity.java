@@ -1,27 +1,16 @@
 /*
- *   Nextcloud Android client application
+ * Nextcloud - Android Client
  *
- *   @author Andy Scherzinger
- *   @author TSI-mc
- *   Copyright (C) 2016 Andy Scherzinger
- *   Copyright (C) 2016 Nextcloud
- *   Copyright (C) 2016 ownCloud Inc.
- *   Copyright (C) 2022 TSI-mc
- *
- *   This program is free software; you can redistribute it and/or
- *   modify it under the terms of the GNU AFFERO GENERAL PUBLIC LICENSE
- *   License as published by the Free Software Foundation; either
- *   version 3 of the License, or any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU AFFERO GENERAL PUBLIC LICENSE for more details.
- *
- *   You should have received a copy of the GNU Affero General Public
- *   License along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2023 ZetaTom
+ * SPDX-FileCopyrightText: 2023 Parneet Singh <gurayaparneet@gmail.com>
+ * SPDX-FileCopyrightText: 2022 Brey Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2022 TSI-mc
+ * SPDX-FileCopyrightText: 2020 Joris Bodin <joris.bodin@infomaniak.com>
+ * SPDX-FileCopyrightText: 2016-2022 Andy Scherzinger
+ * SPDX-FileCopyrightText: 2018-2022 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2016 Nextcloud
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
-
 package com.owncloud.android.ui.activity;
 
 import android.animation.AnimatorInflater;
@@ -53,9 +42,9 @@ import javax.inject.Inject;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.StringRes;
-import androidx.annotation.VisibleForTesting;
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.widget.AppCompatSpinner;
+import androidx.core.content.ContextCompat;
 
 /**
  * Base class providing toolbar registration functionality, see {@link #setupToolbar(boolean, boolean)}.
@@ -64,6 +53,7 @@ public abstract class ToolbarActivity extends BaseActivity implements Injectable
     protected MaterialButton mMenuButton;
     protected MaterialTextView mSearchText;
     protected MaterialButton mSwitchAccountButton;
+    protected MaterialButton mNotificationButton;
 
     private AppBarLayout mAppBar;
     private RelativeLayout mDefaultToolbar;
@@ -94,6 +84,7 @@ public abstract class ToolbarActivity extends BaseActivity implements Injectable
         mMenuButton = findViewById(R.id.menu_button);
         mSearchText = findViewById(R.id.search_text);
         mSwitchAccountButton = findViewById(R.id.switch_account_button);
+        mNotificationButton = findViewById(R.id.notification_button);
 
         if (showSortListButtonGroup) {
             findViewById(R.id.sort_list_button_group).setVisibility(View.VISIBLE);
@@ -116,6 +107,26 @@ public abstract class ToolbarActivity extends BaseActivity implements Injectable
         viewThemeUtils.material.colorMaterialTextButton(mSwitchAccountButton);
     }
 
+    public void setupToolbarShowOnlyMenuButtonAndTitle(String title, View.OnClickListener toggleDrawer) {
+        setupToolbar(false, false);
+
+        ActionBar actionBar = getSupportActionBar();
+        if (actionBar != null) {
+            actionBar.setDisplayShowTitleEnabled(false);
+        }
+
+        LinearLayout toolbar = findViewById(R.id.toolbar_linear_layout);
+        MaterialButton menuButton = findViewById(R.id.toolbar_menu_button);
+        MaterialTextView titleTextView = findViewById(R.id.toolbar_title);
+        titleTextView.setText(title);
+
+        titleTextView.setTextColor(ContextCompat.getColor(this, R.color.foreground_highlight));
+        menuButton.setIconTint(ContextCompat.getColorStateList(this, R.color.foreground_highlight));
+
+        toolbar.setVisibility(View.VISIBLE);
+        menuButton.setOnClickListener(toggleDrawer);
+    }
+
     public void setupToolbar() {
         setupToolbar(false, false);
     }
@@ -131,7 +142,7 @@ public abstract class ToolbarActivity extends BaseActivity implements Injectable
         String title;
         boolean isRoot = isRoot(chosenFile);
 
-        title = isRoot ? themeUtils.getDefaultDisplayNameForRootFolder(this) : chosenFile.getFileName();
+        title = isRoot ? themeUtils.getDefaultDisplayNameForRootFolder(this) : fileDataStorageManager.getFilenameConsideringOfflineOperation(chosenFile);
         updateActionBarTitleAndHomeButtonByString(title);
 
         if (mAppBar != null) {
@@ -180,25 +191,22 @@ public abstract class ToolbarActivity extends BaseActivity implements Injectable
      * Updates title bar and home buttons (state and icon).
      */
     public void updateActionBarTitleAndHomeButtonByString(String title) {
-        String titleToSet = getString(R.string.app_name);    // default
-
-        if (title != null) {
-            titleToSet = title;
-        }
-
         // set & color the chosen title
         ActionBar actionBar = getSupportActionBar();
 
         // set home button properties
         if (actionBar != null) {
-            actionBar.setTitle(titleToSet);
-            actionBar.setDisplayShowTitleEnabled(true);
+            if (title != null) {
+                actionBar.setTitle(title);
+                actionBar.setDisplayShowTitleEnabled(true);
+            } else {
+                actionBar.setDisplayShowTitleEnabled(false);
+            }
         }
     }
 
     /**
      * checks if the given file is the root folder.
-     *
      *
      * @param file file to be checked if it is the root folder
      * @return <code>true</code> if it is <code>null</code> or the root folder, else returns <code>false</code>
@@ -214,16 +222,19 @@ public abstract class ToolbarActivity extends BaseActivity implements Injectable
      * @param text the text to be displayed
      */
     protected final void showInfoBox(@StringRes int text) {
-        mInfoBox.setVisibility(View.VISIBLE);
-        mInfoBoxMessage.setText(text);
+        if (mInfoBox != null && mInfoBoxMessage != null) {
+            mInfoBox.setVisibility(View.VISIBLE);
+            mInfoBoxMessage.setText(text);
+        }
     }
 
     /**
      * Hides the toolbar's info box.
      */
-    @VisibleForTesting
     public final void hideInfoBox() {
-        mInfoBox.setVisibility(View.GONE);
+        if (mInfoBox != null) {
+            mInfoBox.setVisibility(View.GONE);
+        }
     }
 
     public void setPreviewImageVisibility(boolean isVisibility) {
@@ -246,6 +257,9 @@ public abstract class ToolbarActivity extends BaseActivity implements Injectable
         findViewById(R.id.sort_list_button_group).setVisibility(show ? View.VISIBLE : View.GONE);
     }
 
+    public boolean sortListGroupVisibility(){
+        return findViewById(R.id.sort_list_button_group).getVisibility() == View.VISIBLE;
+    }
     /**
      * Change the bitmap for the toolbar's preview image.
      *
@@ -291,7 +305,7 @@ public abstract class ToolbarActivity extends BaseActivity implements Injectable
 
     public void clearToolbarSubtitle() {
         ActionBar actionBar = getSupportActionBar();
-        if(actionBar != null){
+        if (actionBar != null) {
             actionBar.setSubtitle(null);
         }
     }

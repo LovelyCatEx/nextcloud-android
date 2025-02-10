@@ -1,27 +1,11 @@
 /*
- * Nextcloud Android client application
+ * Nextcloud - Android Client
  *
- * @author Mario Danic
- * @author Chris Narkiewicz
- * @author Tobias Kaminsky
- * Copyright (C) 2017-2018 Mario Danic
- * Copyright (C) 2019 Chris Narkiewicz
- * Copyright (C) 2019 Tobias Kaminsky
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2019 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2019 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-FileCopyrightText: 2017-2018 Mario Danic <mario@lovelyhq.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
-
 package com.owncloud.android.utils;
 
 import android.accounts.Account;
@@ -35,6 +19,7 @@ import com.google.gson.Gson;
 import com.nextcloud.client.account.UserAccountManager;
 import com.nextcloud.client.preferences.AppPreferences;
 import com.nextcloud.client.preferences.AppPreferencesImpl;
+import com.nextcloud.common.NextcloudClient;
 import com.owncloud.android.MainApp;
 import com.owncloud.android.R;
 import com.owncloud.android.datamodel.ArbitraryDataProvider;
@@ -42,9 +27,7 @@ import com.owncloud.android.datamodel.ArbitraryDataProviderImpl;
 import com.owncloud.android.datamodel.PushConfigurationState;
 import com.owncloud.android.datamodel.SignatureVerification;
 import com.owncloud.android.lib.common.OwnCloudAccount;
-import com.owncloud.android.lib.common.OwnCloudClient;
 import com.owncloud.android.lib.common.OwnCloudClientManagerFactory;
-import com.owncloud.android.lib.common.operations.RemoteOperation;
 import com.owncloud.android.lib.common.operations.RemoteOperationResult;
 import com.owncloud.android.lib.common.utils.Log_OC;
 import com.owncloud.android.lib.resources.notifications.RegisterAccountDeviceForNotificationsOperation;
@@ -147,14 +130,11 @@ public final class PushUtils {
 
         try {
             ocAccount = new OwnCloudAccount(account, context);
-            OwnCloudClient mClient = OwnCloudClientManagerFactory.getDefaultSingleton().
-                    getClientFor(ocAccount, context);
+            NextcloudClient mClient = OwnCloudClientManagerFactory.getDefaultSingleton().
+                getNextcloudClientFor(ocAccount, context);
 
-            RemoteOperation unregisterAccountDeviceForNotificationsOperation = new
-                    UnregisterAccountDeviceForNotificationsOperation();
-
-            RemoteOperationResult remoteOperationResult = unregisterAccountDeviceForNotificationsOperation.
-                    execute(mClient);
+            RemoteOperationResult<Void> remoteOperationResult =
+                new UnregisterAccountDeviceForNotificationsOperation().execute(mClient);
 
             if (remoteOperationResult.getHttpCode() == HttpStatus.SC_ACCEPTED) {
                 String arbitraryValue;
@@ -217,8 +197,8 @@ public final class PushUtils {
                             TextUtils.isEmpty(providerValue)) {
                         try {
                             OwnCloudAccount ocAccount = new OwnCloudAccount(account, context);
-                            OwnCloudClient client = OwnCloudClientManagerFactory.getDefaultSingleton().
-                                    getClientFor(ocAccount, context);
+                            NextcloudClient client = OwnCloudClientManagerFactory.getDefaultSingleton().
+                                getNextcloudClientFor(ocAccount, context);
 
                             RemoteOperationResult<PushResponse> remoteOperationResult =
                                 new RegisterAccountDeviceForNotificationsOperation(pushTokenHash,

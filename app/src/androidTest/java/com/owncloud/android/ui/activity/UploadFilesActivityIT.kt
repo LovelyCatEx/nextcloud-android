@@ -1,30 +1,23 @@
 /*
+ * Nextcloud - Android Client
  *
- * Nextcloud Android client application
- *
- * @author Tobias Kaminsky
- * Copyright (C) 2020 Tobias Kaminsky
- * Copyright (C) 2020 Nextcloud GmbH
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2020 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2020 Nextcloud GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
 package com.owncloud.android.ui.activity
 
 import android.content.Intent
+import androidx.annotation.UiThread
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.IdlingRegistry
+import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.intent.rule.IntentsTestRule
+import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.isRoot
 import com.nextcloud.test.GrantStoragePermissionRule
 import com.owncloud.android.AbstractIT
+import com.owncloud.android.utils.EspressoIdlingResource
 import com.owncloud.android.utils.FileStorageUtils
 import com.owncloud.android.utils.ScreenshotTest
 import org.junit.After
@@ -34,6 +27,8 @@ import org.junit.Test
 import java.io.File
 
 class UploadFilesActivityIT : AbstractIT() {
+    private val testClassName = "com.owncloud.android.ui.activity.UploadFilesActivityIT"
+
     @get:Rule
     var activityRule = IntentsTestRule(UploadFilesActivity::class.java, true, false)
 
@@ -53,6 +48,16 @@ class UploadFilesActivityIT : AbstractIT() {
         directories.forEach { it.deleteRecursively() }
     }
 
+    @Before
+    fun registerIdlingResource() {
+        IdlingRegistry.getInstance().register(EspressoIdlingResource.countingIdlingResource)
+    }
+
+    @After
+    fun unregisterIdlingResource() {
+        IdlingRegistry.getInstance().unregister(EspressoIdlingResource.countingIdlingResource)
+    }
+
     @Test
     @ScreenshotTest
     fun noneSelected() {
@@ -70,9 +75,9 @@ class UploadFilesActivityIT : AbstractIT() {
         }
 
         waitForIdleSync()
-        shortSleep()
+        longSleep()
 
-        screenshot(sut)
+        screenshot(sut.fileListFragment.binding.listRoot)
     }
 
     @Test
@@ -102,11 +107,53 @@ class UploadFilesActivityIT : AbstractIT() {
         screenshot(sut)
     }
 
-    fun fileSelected() {
+    @Test
+    @UiThread
+    @ScreenshotTest
+    fun search() {
         val sut: UploadFilesActivity = activityRule.launchActivity(null)
 
-        // TODO select one
+        sut.runOnUiThread {
+            sut.fileListFragment.setFiles(
+                directories +
+                    listOf(
+                        File("1.txt"),
+                        File("2.pdf"),
+                        File("3.mp3")
+                    )
+            )
 
-        screenshot(sut)
+            onIdleSync {
+                EspressoIdlingResource.increment()
+                sut.fileListFragment.performSearch("1.txt", arrayListOf(), false)
+                EspressoIdlingResource.decrement()
+                val screenShotName = createName(testClassName + "_" + "search", "")
+                onView(isRoot()).check(matches(isDisplayed()))
+                screenshotViaName(sut, screenShotName)
+            }
+        }
+    }
+
+    @Test
+    @ScreenshotTest
+    fun selectAll() {
+        val sut: UploadFilesActivity = activityRule.launchActivity(null)
+
+        sut.runOnUiThread {
+            sut.fileListFragment.setFiles(
+                listOf(
+                    File("1.txt"),
+                    File("2.pdf"),
+                    File("3.mp3")
+                )
+            )
+
+            sut.fileListFragment.selectAllFiles(true)
+        }
+
+        onIdleSync {
+            val screenShotName = createName(testClassName + "_" + "selectAll", "")
+            screenshotViaName(sut.fileListFragment.binding.listRoot, screenShotName)
+        }
     }
 }

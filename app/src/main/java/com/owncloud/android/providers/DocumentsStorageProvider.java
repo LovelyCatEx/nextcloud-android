@@ -1,25 +1,11 @@
 /*
- *   Nextcloud Android client application
+ * Nextcloud - Android Client
  *
- *   @author Bartosz Przybylski
- *   @author Chris Narkiewicz
- *   Copyright (C) 2016  Bartosz Przybylski <bart.p.pl@gmail.com>
- *   Copyright (C) 2021 Chris Narkiewicz <hello@ezaquarii.com>
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License version 2,
- *   as published by the Free Software Foundation.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
+ * SPDX-FileCopyrightText: 2020-2022 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2019-2021 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-FileCopyrightText: 2016 Bartosz Przybylski <bart.p.pl@gmail.com>
+ * SPDX-License-Identifier: GPL-2.0-only AND (AGPL-3.0-or-later OR GPL-2.0-only)
  */
-
 package com.owncloud.android.providers;
 
 import android.accounts.AuthenticatorException;
@@ -43,17 +29,18 @@ import android.widget.Toast;
 
 import com.nextcloud.client.account.User;
 import com.nextcloud.client.account.UserAccountManager;
-import com.nextcloud.client.files.downloader.DownloadTask;
+import com.nextcloud.client.jobs.upload.FileUploadHelper;
+import com.nextcloud.client.jobs.upload.FileUploadWorker;
 import com.nextcloud.client.preferences.AppPreferences;
 import com.nextcloud.client.preferences.AppPreferencesImpl;
 import com.nextcloud.client.utils.HashUtil;
+import com.nextcloud.utils.extensions.ContextExtensionsKt;
+import com.nextcloud.utils.fileNameValidator.FileNameValidator;
 import com.owncloud.android.MainApp;
 import com.owncloud.android.R;
 import com.owncloud.android.datamodel.FileDataStorageManager;
 import com.owncloud.android.datamodel.OCFile;
 import com.owncloud.android.datamodel.ThumbnailsCacheManager;
-import com.owncloud.android.files.services.FileDownloader;
-import com.owncloud.android.files.services.FileUploader;
 import com.owncloud.android.files.services.NameCollisionPolicy;
 import com.owncloud.android.lib.common.OwnCloudAccount;
 import com.owncloud.android.lib.common.OwnCloudClient;
@@ -62,6 +49,7 @@ import com.owncloud.android.lib.common.operations.RemoteOperationResult;
 import com.owncloud.android.lib.common.utils.Log_OC;
 import com.owncloud.android.lib.resources.files.CheckEtagRemoteOperation;
 import com.owncloud.android.lib.resources.files.UploadFileRemoteOperation;
+import com.owncloud.android.lib.resources.status.OCCapability;
 import com.owncloud.android.operations.CopyFileOperation;
 import com.owncloud.android.operations.CreateFolderOperation;
 import com.owncloud.android.operations.DownloadFileOperation;
@@ -74,6 +62,7 @@ import com.owncloud.android.ui.helpers.FileOperationsHelper;
 import com.owncloud.android.utils.FileStorageUtils;
 import com.owncloud.android.utils.FileUtil;
 import com.owncloud.android.utils.MimeTypeUtil;
+import com.owncloud.android.utils.theme.CapabilityUtils;
 
 import org.nextcloud.providers.cursors.FileCursor;
 import org.nextcloud.providers.cursors.RootCursor;
@@ -101,7 +90,6 @@ import static android.os.ParcelFileDescriptor.MODE_READ_ONLY;
 import static android.os.ParcelFileDescriptor.MODE_WRITE_ONLY;
 import static com.owncloud.android.datamodel.OCFile.PATH_SEPARATOR;
 import static com.owncloud.android.datamodel.OCFile.ROOT_PATH;
-import static com.owncloud.android.files.services.FileUploader.LOCAL_BEHAVIOUR_DELETE;
 
 public class DocumentsStorageProvider extends DocumentsProvider {
 
@@ -110,6 +98,8 @@ public class DocumentsStorageProvider extends DocumentsProvider {
     private static final long CACHE_EXPIRATION = TimeUnit.MILLISECONDS.convert(1, TimeUnit.MINUTES);
 
     @Inject UserAccountManager accountManager;
+
+    private boolean isFolderPathValid = true;
 
     @VisibleForTesting
     static final String DOCUMENTID_SEPARATOR = "/";
@@ -203,6 +193,11 @@ public class DocumentsStorageProvider extends DocumentsProvider {
         throws FileNotFoundException {
         Log_OC.d(TAG, "openDocument(), id=" + documentId);
 
+        if (!isFolderPathValid) {
+            Log_OC.d(TAG, "Folder path is not valid, operation is cancelled");
+            return null;
+        }
+
         Document document = toDocument(documentId);
         Context context = getNonNullContext();
 
@@ -268,13 +263,11 @@ public class DocumentsStorageProvider extends DocumentsProvider {
 
                         // TODO disable upload notifications as DocumentsProvider users already show them
                         // upload file with FileUploader service (off main thread)
-                        FileUploader.uploadUpdateFile(
-                            context,
+                        FileUploadHelper.Companion.instance().uploadUpdatedFile(
                             user,
-                            ocFile,
-                            LOCAL_BEHAVIOUR_DELETE,
-                            NameCollisionPolicy.OVERWRITE,
-                            false);
+                            new OCFile[]{ ocFile },
+                            FileUploadWorker.LOCAL_BEHAVIOUR_DELETE,
+                            NameCollisionPolicy.OVERWRITE);
                     } else {
                         // error, no upload needed
                         Log_OC.e(TAG, "File was closed with an error: " + ocFile.getFileName(), error);
@@ -308,7 +301,6 @@ public class DocumentsStorageProvider extends DocumentsProvider {
     /**
      * Updates the OC File after a successful download.
      *
-     * TODO unify with code from {@link FileDownloader} and {@link DownloadTask}.
      */
     private void saveDownloadedFile(FileDataStorageManager storageManager, DownloadFileOperation dfo, OCFile file) {
         long syncDate = System.currentTimeMillis();
@@ -345,7 +337,7 @@ public class DocumentsStorageProvider extends DocumentsProvider {
     public AssetFileDescriptor openDocumentThumbnail(String documentId,
                                                      Point sizeHint,
                                                      CancellationSignal signal)
-            throws FileNotFoundException {
+        throws FileNotFoundException {
         Log_OC.d(TAG, "openDocumentThumbnail(), id=" + documentId);
 
         Document document = toDocument(documentId);
@@ -366,8 +358,13 @@ public class DocumentsStorageProvider extends DocumentsProvider {
     public String renameDocument(String documentId, String displayName) throws FileNotFoundException {
         Log_OC.d(TAG, "renameDocument(), id=" + documentId);
 
-        Document document = toDocument(documentId);
+        String errorMessage = checkFileName(displayName);
+        if (errorMessage != null) {
+            ContextExtensionsKt.showToast(getNonNullContext(), errorMessage);
+            return null;
+        }
 
+        Document document = toDocument(documentId);
         RemoteOperationResult result = new RenameFileOperation(document.getRemotePath(),
                                                                displayName,
                                                                document.getStorageManager())
@@ -389,11 +386,17 @@ public class DocumentsStorageProvider extends DocumentsProvider {
     public String copyDocument(String sourceDocumentId, String targetParentDocumentId) throws FileNotFoundException {
         Log_OC.d(TAG, "copyDocument(), id=" + sourceDocumentId);
 
-        Document document = toDocument(sourceDocumentId);
-
-        FileDataStorageManager storageManager = document.getStorageManager();
         Document targetFolder = toDocument(targetParentDocumentId);
 
+        String filename = targetFolder.getFile().getFileName();
+        isFolderPathValid = checkFolderPath(filename);
+        if (!isFolderPathValid) {
+            ContextExtensionsKt.showToast(getNonNullContext(), R.string.file_name_validator_error_contains_reserved_names_or_invalid_characters);
+            return null;
+        }
+
+        Document document = toDocument(sourceDocumentId);
+        FileDataStorageManager storageManager = document.getStorageManager();
         RemoteOperationResult result = new CopyFileOperation(document.getRemotePath(),
                                                              targetFolder.getRemotePath(),
                                                              document.getStorageManager())
@@ -441,9 +444,16 @@ public class DocumentsStorageProvider extends DocumentsProvider {
         throws FileNotFoundException {
         Log_OC.d(TAG, "moveDocument(), id=" + sourceDocumentId);
 
-        Document document = toDocument(sourceDocumentId);
         Document targetFolder = toDocument(targetParentDocumentId);
 
+        String filename = targetFolder.getFile().getFileName();
+        isFolderPathValid = checkFolderPath(filename);
+        if (!isFolderPathValid) {
+            ContextExtensionsKt.showToast(getNonNullContext(), R.string.file_name_validator_error_contains_reserved_names_or_invalid_characters);
+            return null;
+        }
+
+        Document document = toDocument(sourceDocumentId);
         RemoteOperationResult result = new MoveFileOperation(document.getRemotePath(),
                                                              targetFolder.getRemotePath(),
                                                              document.getStorageManager())
@@ -482,9 +492,27 @@ public class DocumentsStorageProvider extends DocumentsProvider {
         return result;
     }
 
+    private OCCapability getCapabilities() {
+        return CapabilityUtils.getCapability(accountManager.getUser(), getNonNullContext());
+    }
+
+    private boolean checkFolderPath(String filename) {
+        return FileNameValidator.INSTANCE.checkFolderPath(filename, getCapabilities(), getNonNullContext());
+    }
+
+    private String checkFileName(String filename) {
+        return FileNameValidator.INSTANCE.checkFileName(filename, getCapabilities(), getNonNullContext(),null);
+    }
+
     @Override
     public String createDocument(String documentId, String mimeType, String displayName) throws FileNotFoundException {
         Log_OC.d(TAG, "createDocument(), id=" + documentId);
+
+        String errorMessage = checkFileName(displayName);
+        if (errorMessage != null) {
+            ContextExtensionsKt.showToast(getNonNullContext(), errorMessage);
+            return null;
+        }
 
         Document folderDocument = toDocument(documentId);
 

@@ -1,3 +1,9 @@
+/*
+ * Nextcloud - Android Client
+ *
+ * SPDX-FileCopyrightText: 2020 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
+ */
 package com.nextcloud.client.etm.pages
 
 import android.os.Bundle
@@ -13,13 +19,14 @@ import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.nextcloud.client.etm.EtmBaseFragment
-import com.nextcloud.client.files.downloader.DownloadRequest
-import com.nextcloud.client.files.downloader.Transfer
-import com.nextcloud.client.files.downloader.TransferManager
-import com.nextcloud.client.files.downloader.UploadRequest
+import com.nextcloud.client.files.DownloadRequest
+import com.nextcloud.client.files.UploadRequest
+import com.nextcloud.client.jobs.transfer.Transfer
+import com.nextcloud.client.jobs.transfer.TransferManager
 import com.owncloud.android.R
 import com.owncloud.android.datamodel.OCFile
 import com.owncloud.android.db.OCUpload
+import java.util.Locale
 
 class EtmFileTransferFragment : EtmBaseFragment() {
 
@@ -90,7 +97,7 @@ class EtmFileTransferFragment : EtmBaseFragment() {
             vh.state.text = transfer.state.toString()
             if (transfer.progress >= 0) {
                 vh.progressEnabled = true
-                vh.progress.text = transfer.progress.toString()
+                vh.progress.text = String.format(Locale.getDefault(), "%d", transfer.progress)
             } else {
                 vh.progressEnabled = false
             }
@@ -134,10 +141,12 @@ class EtmFileTransferFragment : EtmBaseFragment() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.etm_test_download -> {
-                scheduleTestDownload(); true
+                scheduleTestDownload()
+                true
             }
             R.id.etm_test_upload -> {
-                scheduleTestUpload(); true
+                scheduleTestUpload()
+                true
             }
             else -> super.onOptionsItemSelected(item)
         }

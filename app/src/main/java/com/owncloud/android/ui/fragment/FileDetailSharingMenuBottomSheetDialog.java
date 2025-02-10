@@ -5,18 +5,7 @@
  * Copyright (C) 2021 TSI-mc
  * Copyright (C) 2021 Nextcloud GmbH
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
 
 package com.owncloud.android.ui.fragment;
@@ -27,6 +16,7 @@ import android.view.ViewGroup;
 
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
+import com.nextcloud.utils.mdm.MDMConfig;
 import com.owncloud.android.databinding.FileDetailsSharingMenuBottomSheetFragmentBinding;
 import com.owncloud.android.lib.resources.shares.OCShare;
 import com.owncloud.android.lib.resources.shares.ShareType;
@@ -83,7 +73,10 @@ public class FileDetailSharingMenuBottomSheetDialog extends BottomSheetDialog {
     private void updateUI() {
         if (ocShare.getShareType() == ShareType.PUBLIC_LINK) {
             binding.menuShareAddAnotherLink.setVisibility(View.VISIBLE);
-            binding.menuShareSendLink.setVisibility(View.VISIBLE);
+
+            if (MDMConfig.INSTANCE.sendFilesSupport(getContext())) {
+                binding.menuShareSendLink.setVisibility(View.VISIBLE);
+            }
         } else {
             binding.menuShareAddAnotherLink.setVisibility(View.GONE);
             binding.menuShareSendLink.setVisibility(View.GONE);

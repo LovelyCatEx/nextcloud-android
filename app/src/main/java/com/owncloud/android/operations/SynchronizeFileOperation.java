@@ -1,35 +1,27 @@
 /*
- *  ownCloud Android client application
+ * Nextcloud - Android Client
  *
- *  @author David A. Velasco
- *  @author masensio
- *  Copyright (C) 2012 Bartek Przybylski
- *  Copyright (C) 2015 ownCloud Inc.
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2,
- *  as published by the Free Software Foundation.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2024 Alper Ozturk <alper.ozturk@nextcloud.com>
+ * SPDX-FileCopyrightText: 2021 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-FileCopyrightText: 2021 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2016-2018 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-FileCopyrightText: 2016 ownCloud Inc.
+ * SPDX-FileCopyrightText: 2013-2016 María Asensio Valverde <masensio@solidgear.es>
+ * SPDX-FileCopyrightText: 2012 David A. Velasco <dvelasco@solidgear.es>
+ * SPDX-FileCopyrightText: 2012 Bartek Przybylski <bart.p.pl@gmail.com>
+ * SPDX-License-Identifier: GPL-2.0-only AND (AGPL-3.0-or-later OR GPL-2.0-only)
  */
-
 package com.owncloud.android.operations;
 
 import android.content.Context;
-import android.content.Intent;
 import android.text.TextUtils;
 
 import com.nextcloud.client.account.User;
+import com.nextcloud.client.jobs.download.FileDownloadHelper;
+import com.nextcloud.client.jobs.upload.FileUploadHelper;
+import com.nextcloud.client.jobs.upload.FileUploadWorker;
 import com.owncloud.android.datamodel.FileDataStorageManager;
 import com.owncloud.android.datamodel.OCFile;
-import com.owncloud.android.files.services.FileDownloader;
-import com.owncloud.android.files.services.FileUploader;
 import com.owncloud.android.files.services.NameCollisionPolicy;
 import com.owncloud.android.lib.common.OwnCloudClient;
 import com.owncloud.android.lib.common.operations.RemoteOperationResult;
@@ -54,10 +46,12 @@ public class SynchronizeFileOperation extends SyncOperation {
     private boolean mSyncFileContents;
     private Context mContext;
     private boolean mTransferWasRequested;
+    private final boolean syncInBackgroundWorker;
+
 
     /**
-     * When 'false', uploads to the server are not done; only downloads or conflict detection.
-     * This is a temporal field.
+     * When 'false', uploads to the server are not done; only downloads or conflict detection. This is a temporal
+     * field.
      * TODO Remove when 'folder synchronization' replaces 'folder download'.
      */
     private boolean mAllowUploads;
@@ -66,15 +60,15 @@ public class SynchronizeFileOperation extends SyncOperation {
     /**
      * Constructor for "full synchronization mode".
      * <p/>
-     * Uses remotePath to retrieve all the data both in local cache and in the remote OC server
-     * when the operation is executed, instead of reusing {@link OCFile} instances.
+     * Uses remotePath to retrieve all the data both in local cache and in the remote OC server when the operation is
+     * executed, instead of reusing {@link OCFile} instances.
      * <p/>
      * Useful for direct synchronization of a single file.
      *
      * @param remotePath       remote path of the file
      * @param user             Nextcloud user owning the file.
-     * @param syncFileContents When 'true', transference of data will be started by the
-     *                         operation if needed and no conflict is detected.
+     * @param syncFileContents When 'true', transference of data will be started by the operation if needed and no
+     *                         conflict is detected.
      * @param context          Android context; needed to start transfers.
      */
     public SynchronizeFileOperation(
@@ -82,7 +76,8 @@ public class SynchronizeFileOperation extends SyncOperation {
         User user,
         boolean syncFileContents,
         Context context,
-        FileDataStorageManager storageManager) {
+        FileDataStorageManager storageManager,
+        boolean syncInBackgroundWorker) {
         super(storageManager);
 
         mRemotePath = remotePath;
@@ -92,26 +87,25 @@ public class SynchronizeFileOperation extends SyncOperation {
         mSyncFileContents = syncFileContents;
         mContext = context;
         mAllowUploads = true;
+        this.syncInBackgroundWorker = syncInBackgroundWorker;
     }
 
 
     /**
-     * Constructor allowing to reuse {@link OCFile} instances just queried from local cache or
-     * from remote OC server.
-     *
-     * Useful to include this operation as part of the synchronization of a folder
-     * (or a full account), avoiding the repetition of fetch operations (both in local database
-     * or remote server).
-     *
-     * At least one of localFile or serverFile MUST NOT BE NULL. If you don't have none of them,
-     * use the other constructor.
+     * Constructor allowing to reuse {@link OCFile} instances just queried from local cache or from remote OC server.
+     * <p>
+     * Useful to include this operation as part of the synchronization of a folder (or a full account), avoiding the
+     * repetition of fetch operations (both in local database or remote server).
+     * <p>
+     * At least one of localFile or serverFile MUST NOT BE NULL. If you don't have none of them, use the other
+     * constructor.
      *
      * @param localFile        Data of file (just) retrieved from local cache/database.
-     * @param serverFile       Data of file (just) retrieved from a remote server. If null,
-     *                         will be retrieved from network by the operation when executed.
+     * @param serverFile       Data of file (just) retrieved from a remote server. If null, will be retrieved from
+     *                         network by the operation when executed.
      * @param user             Nextcloud user owning the file.
-     * @param syncFileContents When 'true', transference of data will be started by the
-     *                         operation if needed and no conflict is detected.
+     * @param syncFileContents When 'true', transference of data will be started by the operation if needed and no
+     *                         conflict is detected.
      * @param context          Android context; needed to start transfers.
      */
     public SynchronizeFileOperation(
@@ -120,7 +114,8 @@ public class SynchronizeFileOperation extends SyncOperation {
         User user,
         boolean syncFileContents,
         Context context,
-        FileDataStorageManager storageManager) {
+        FileDataStorageManager storageManager,
+        boolean syncInBackgroundWorker) {
         super(storageManager);
 
         mLocalFile = localFile;
@@ -140,30 +135,27 @@ public class SynchronizeFileOperation extends SyncOperation {
         mSyncFileContents = syncFileContents;
         mContext = context;
         mAllowUploads = true;
+        this.syncInBackgroundWorker = syncInBackgroundWorker;
     }
 
 
     /**
      * Temporal constructor.
-     *
-     * Extends the previous one to allow constrained synchronizations where uploads are never
-     * performed - only downloads or conflict detection.
-     *
-     * Do not use unless you are involved in 'folder synchronization' or 'folder download' work
-     * in progress.
-     *
+     * <p>
+     * Extends the previous one to allow constrained synchronizations where uploads are never performed - only downloads
+     * or conflict detection.
+     * <p>
+     * Do not use unless you are involved in 'folder synchronization' or 'folder download' work in progress.
+     * <p>
      * TODO Remove when 'folder synchronization' replaces 'folder download'.
      *
-     * @param localFile        Data of file (just) retrieved from local cache/database.
-     *                         MUSTN't be null.
-     * @param serverFile       Data of file (just) retrieved from a remote server.
-     *                         If null, will be retrieved from network by the operation
-     *                         when executed.
+     * @param localFile        Data of file (just) retrieved from local cache/database. MUSTN't be null.
+     * @param serverFile       Data of file (just) retrieved from a remote server. If null, will be retrieved from
+     *                         network by the operation when executed.
      * @param user             Nextcloud user owning the file.
-     * @param syncFileContents When 'true', transference of data will be started by the
-     *                         operation if needed and no conflict is detected.
-     * @param allowUploads     When 'false', uploads to the server are not done;
-     *                         only downloads or conflict detection.
+     * @param syncFileContents When 'true', transference of data will be started by the operation if needed and no
+     *                         conflict is detected.
+     * @param allowUploads     When 'false', uploads to the server are not done; only downloads or conflict detection.
      * @param context          Android context; needed to start transfers.
      */
     public SynchronizeFileOperation(
@@ -173,9 +165,9 @@ public class SynchronizeFileOperation extends SyncOperation {
         boolean syncFileContents,
         boolean allowUploads,
         Context context,
-        FileDataStorageManager storageManager) {
-
-        this(localFile, serverFile, user, syncFileContents, context, storageManager);
+        FileDataStorageManager storageManager,
+        boolean syncInBackgroundWorker) {
+        this(localFile, serverFile, user, syncFileContents, context, storageManager, syncInBackgroundWorker);
         mAllowUploads = allowUploads;
     }
 
@@ -215,12 +207,12 @@ public class SynchronizeFileOperation extends SyncOperation {
                 if (TextUtils.isEmpty(mLocalFile.getEtag())) {
                     // file uploaded (null) or downloaded ("") before upgrade to version 1.8.0; check the old condition
                     serverChanged = mServerFile.getModificationTimestamp() !=
-                            mLocalFile.getModificationTimestampAtLastSyncForData();
+                        mLocalFile.getModificationTimestampAtLastSyncForData();
                 } else {
                     serverChanged = !mServerFile.getEtag().equals(mLocalFile.getEtag());
                 }
                 boolean localChanged =
-                        mLocalFile.getLocalModificationTimestamp() > mLocalFile.getLastSyncDateForData();
+                    mLocalFile.getLocalModificationTimestamp() > mLocalFile.getLastSyncDateForData();
 
                 /// decide action to perform depending upon changes
                 //if (!mLocalFile.getEtag().isEmpty() && localChanged && serverChanged) {
@@ -254,6 +246,7 @@ public class SynchronizeFileOperation extends SyncOperation {
                     } else {
                         // TODO CHECK: is this really useful in some point in the code?
                         mServerFile.setFavorite(mLocalFile.isFavorite());
+                        mServerFile.setHidden(mLocalFile.shouldHide());
                         mServerFile.setLastSyncDateForData(mLocalFile.getLastSyncDateForData());
                         mServerFile.setStoragePath(mLocalFile.getStoragePath());
                         mServerFile.setParentId(mLocalFile.getParentId());
@@ -286,7 +279,7 @@ public class SynchronizeFileOperation extends SyncOperation {
         }
 
         Log_OC.i(TAG, "Synchronizing " + mUser.getAccountName() + ", file " + mLocalFile.getRemotePath() +
-                ": " + result.getLogMessage());
+            ": " + result.getLogMessage());
 
         return result;
     }
@@ -298,44 +291,49 @@ public class SynchronizeFileOperation extends SyncOperation {
      * @param file OCFile object representing the file to upload
      */
     private void requestForUpload(OCFile file) {
-        FileUploader.uploadUpdateFile(
-            mContext,
+        FileUploadHelper.Companion.instance().uploadUpdatedFile(
             mUser,
-            file,
-            FileUploader.LOCAL_BEHAVIOUR_MOVE,
-            NameCollisionPolicy.OVERWRITE
-                                     );
+            new OCFile[]{ file },
+            FileUploadWorker.LOCAL_BEHAVIOUR_MOVE,
+            NameCollisionPolicy.OVERWRITE);
 
         mTransferWasRequested = true;
     }
 
-
-    /**
-     * Requests for a download to the FileDownloader service
-     *
-     * @param file OCFile object representing the file to download
-     */
     private void requestForDownload(OCFile file) {
-        Intent i = new Intent(mContext, FileDownloader.class);
-        i.putExtra(FileDownloader.EXTRA_USER, mUser);
-        i.putExtra(FileDownloader.EXTRA_FILE, file);
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            mContext.startForegroundService(i);
+        final var fileDownloadHelper = FileDownloadHelper.Companion.instance();
+        
+        if (syncInBackgroundWorker) {
+            Log_OC.d("InternalTwoWaySyncWork", "download file: " + file.getFileName());
+
+            try {
+                final var operation = new DownloadFileOperation(mUser, file, mContext);
+                var result = operation.execute(getClient());
+
+                mTransferWasRequested = true;
+
+                String filename = file.getFileName();
+                if (filename != null) {
+                    if (result.isSuccess()) {
+                        fileDownloadHelper.saveFile(file, operation, getStorageManager());
+                        Log_OC.d(TAG, "requestForDownload completed for: " + file.getFileName());
+                    } else {
+                        Log_OC.d(TAG, "requestForDownload failed for: " + file.getFileName());
+                    }
+                }
+            } catch (Exception e) {
+                Log_OC.d(TAG, "Exception caught at requestForDownload" + e);
+            }
         } else {
-            mContext.startService(i);
+            fileDownloadHelper.downloadFile(mUser, file);
         }
-
-        mTransferWasRequested = true;
     }
-
 
     public boolean transferWasRequested() {
         return mTransferWasRequested;
     }
 
-
     public OCFile getLocalFile() {
         return mLocalFile;
     }
-
 }

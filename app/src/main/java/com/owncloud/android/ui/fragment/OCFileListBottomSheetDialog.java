@@ -1,23 +1,9 @@
 /*
- * Nextcloud Android client application
+ * Nextcloud - Android Client
  *
- * @author Andy Scherzinger
- * Copyright (C) 2018 Andy Scherzinger
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2018 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
-
 package com.owncloud.android.ui.fragment;
 
 import android.os.Bundle;
@@ -25,10 +11,12 @@ import android.view.View;
 
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.gson.Gson;
+import com.nextcloud.android.common.ui.theme.utils.ColorRole;
 import com.nextcloud.client.account.User;
 import com.nextcloud.client.device.DeviceInfo;
 import com.nextcloud.client.di.Injectable;
 import com.nextcloud.client.documentscan.AppScanOptionalFeature;
+import com.nextcloud.utils.BuildHelper;
 import com.nextcloud.utils.EditorUtils;
 import com.owncloud.android.R;
 import com.owncloud.android.databinding.FileListActionsBottomSheetCreatorBinding;
@@ -89,12 +77,12 @@ public class OCFileListBottomSheetDialog extends BottomSheetDialog implements In
         binding = FileListActionsBottomSheetFragmentBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
-        viewThemeUtils.platform.colorImageView(binding.menuIconUploadFiles);
-        viewThemeUtils.platform.colorImageView(binding.menuIconUploadFromApp);
-        viewThemeUtils.platform.colorImageView(binding.menuIconDirectCameraUpload);
-        viewThemeUtils.platform.colorImageView(binding.menuIconScanDocUpload);
-        viewThemeUtils.platform.colorImageView(binding.menuIconMkdir);
-        viewThemeUtils.platform.colorImageView(binding.menuIconAddFolderInfo);
+        viewThemeUtils.platform.colorImageView(binding.menuIconUploadFiles, ColorRole.PRIMARY);
+        viewThemeUtils.platform.colorImageView(binding.menuIconUploadFromApp, ColorRole.PRIMARY);
+        viewThemeUtils.platform.colorImageView(binding.menuIconDirectCameraUpload, ColorRole.PRIMARY);
+        viewThemeUtils.platform.colorImageView(binding.menuIconScanDocUpload, ColorRole.PRIMARY);
+        viewThemeUtils.platform.colorImageView(binding.menuIconMkdir, ColorRole.PRIMARY);
+        viewThemeUtils.platform.colorImageView(binding.menuIconAddFolderInfo, ColorRole.PRIMARY);
 
         binding.addToCloud.setText(getContext().getResources().getString(R.string.add_to_cloud,
                                                                          themeUtils.getDefaultDisplayNameForRootFolder(getContext())));
@@ -169,7 +157,13 @@ public class OCFileListBottomSheetDialog extends BottomSheetDialog implements In
             binding.menuCreateRichWorkspaceDivider.setVisibility(View.GONE);
         }
 
+        if (BuildHelper.INSTANCE.isFlavourGPlay()) {
+            binding.menuUploadFiles.setVisibility(View.GONE);
+            binding.uploadContentFromOtherApps.setText(getContext().getString(R.string.upload_files));
+        }
+
         setupClickListener();
+        filterActionsForOfflineOperations();
     }
 
     private void setupClickListener() {
@@ -220,6 +214,27 @@ public class OCFileListBottomSheetDialog extends BottomSheetDialog implements In
         binding.menuNewPresentation.setOnClickListener(v -> {
             actions.newPresentation();
             dismiss();
+        });
+    }
+
+    private void filterActionsForOfflineOperations() {
+        if (file == null) return;
+
+        fileActivity.connectivityService.isNetworkAndServerAvailable(result -> {
+            if (file.isRootDirectory()) {
+                return;
+            }
+
+            if (!result || file.isOfflineOperation()) {
+                binding.menuCreateRichWorkspace.setVisibility(View.GONE);
+                binding.menuUploadFromApp.setVisibility(View.GONE);
+                binding.menuDirectCameraUpload.setVisibility(View.GONE);
+                binding.menuScanDocUpload.setVisibility(View.GONE);
+                binding.menuNewDocument.setVisibility(View.GONE);
+                binding.menuNewSpreadsheet.setVisibility(View.GONE);
+                binding.menuNewPresentation.setVisibility(View.GONE);
+                binding.creatorsContainer.setVisibility(View.GONE);
+            }
         });
     }
 

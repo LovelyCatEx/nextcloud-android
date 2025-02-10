@@ -1,24 +1,10 @@
 /*
+ * Nextcloud - Android Client
  *
- * Nextcloud Android client application
- *
- * @author Tobias Kaminsky
- * Copyright (C) 2020 Tobias Kaminsky
- * Copyright (C) 2020 Nextcloud GmbH
- * Copyright (C) 2020 Chris Narkiewicz <hello@ezaquarii.com>
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2020 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2020 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-FileCopyrightText: 2020 Nextcloud GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
 package com.owncloud.android.ui.fragment
 
@@ -29,6 +15,7 @@ import com.owncloud.android.AbstractIT
 import com.owncloud.android.datamodel.OCFile
 import com.owncloud.android.lib.resources.shares.ShareType
 import com.owncloud.android.lib.resources.shares.ShareeUser
+import com.owncloud.android.lib.resources.tags.Tag
 import com.owncloud.android.utils.MimeType
 import com.owncloud.android.utils.ScreenshotTest
 import org.junit.Assert
@@ -49,6 +36,7 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         val sut = testActivityRule.launchActivity(null)
 
         OCFile("/1.png").apply {
+            remoteId = "00000001"
             mimeType = "image/png"
             fileLength = 1024000
             modificationTimestamp = 1188206955000
@@ -57,22 +45,35 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         }
 
         OCFile("/image.png").apply {
+            remoteId = "00000002"
             mimeType = "image/png"
             isPreviewAvailable = false
             fileLength = 3072000
             modificationTimestamp = 746443755000
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
-            tags = listOf("Top secret")
+            tags = listOf(Tag("", "Top secret", null))
+            sut.storageManager.saveFile(this)
+        }
+
+        OCFile("/live photo.png").apply {
+            remoteId = "00000003"
+            mimeType = "image/png"
+            isPreviewAvailable = false
+            fileLength = 3072000
+            modificationTimestamp = 746443755000
+            parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
+            setLivePhoto("/video.mov")
             sut.storageManager.saveFile(this)
         }
 
         OCFile("/video.mp4").apply {
+            remoteId = "00000004"
             mimeType = "video/mp4"
             isPreviewAvailable = false
             fileLength = 12092000
             modificationTimestamp = 746143952000
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
-            tags = listOf("Confidential", "+5")
+            tags = listOf(Tag("", "Confidential", null), Tag("", "+5", null))
             sut.storageManager.saveFile(this)
         }
 
@@ -100,6 +101,7 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         val fragment = OCFileListFragment()
 
         OCFile("/sharedToUser.jpg").apply {
+            remoteId = "00000001"
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
             isSharedWithSharee = true
             sharees = listOf(ShareeUser("Admin", "Server Admin", ShareType.USER))
@@ -108,6 +110,7 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         }
 
         OCFile("/sharedToGroup.jpg").apply {
+            remoteId = "00000002"
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
             isSharedWithSharee = true
             sharees = listOf(ShareeUser("group", "Group", ShareType.GROUP))
@@ -116,6 +119,7 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         }
 
         OCFile("/sharedToEmail.jpg").apply {
+            remoteId = "00000003"
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
             isSharedWithSharee = true
             sharees = listOf(ShareeUser("admin@nextcloud.localhost", "admin@nextcloud.localhost", ShareType.EMAIL))
@@ -124,6 +128,7 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         }
 
         OCFile("/publicLink.jpg").apply {
+            remoteId = "00000004"
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
             isSharedViaLink = true
             modificationTimestamp = 1000
@@ -131,6 +136,7 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         }
 
         OCFile("/sharedToFederatedUser.jpg").apply {
+            remoteId = "00000005"
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
             isSharedWithSharee = true
             sharees = listOf(
@@ -141,6 +147,7 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         }
 
         OCFile("/sharedToPersonalCircle.jpg").apply {
+            remoteId = "00000006"
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
             isSharedWithSharee = true
             sharees = listOf(ShareeUser("circle", "Circle (Personal circle)", ShareType.CIRCLE))
@@ -174,6 +181,7 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
 //        }
 
         OCFile("/sharedToUserRoom.jpg").apply {
+            remoteId = "00000007"
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
             isSharedWithSharee = true
             sharees = listOf(ShareeUser("Conversation", "Admin", ShareType.ROOM))
@@ -182,6 +190,7 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         }
 
         OCFile("/sharedToGroupRoom.jpg").apply {
+            remoteId = "00000008"
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
             isSharedWithSharee = true
             sharees = listOf(ShareeUser("Conversation", "Meeting", ShareType.ROOM))
@@ -190,6 +199,7 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         }
 
         OCFile("/sharedToUsers.jpg").apply {
+            remoteId = "00000009"
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
             isSharedWithSharee = true
             sharees = listOf(
@@ -202,6 +212,7 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         }
 
         OCFile("/notShared.jpg").apply {
+            remoteId = "000000010"
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
             modificationTimestamp = 1000
             sut.storageManager.saveFile(this)
@@ -236,13 +247,33 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         val fragment = OCFileListFragment()
 
         OCFile("/normal/").apply {
+            remoteId = "00000001"
             mimeType = MimeType.DIRECTORY
             modificationTimestamp = 1624003571000
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
             sut.storageManager.saveFile(this)
         }
 
+        OCFile("/sharedViaLink/").apply {
+            remoteId = "00000002"
+            mimeType = MimeType.DIRECTORY
+            isSharedViaLink = true
+            modificationTimestamp = 1619003571000
+            parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
+            sut.storageManager.saveFile(this)
+        }
+
+        OCFile("/share/").apply {
+            remoteId = "00000003"
+            mimeType = MimeType.DIRECTORY
+            isSharedWithSharee = true
+            modificationTimestamp = 1619303571000
+            parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
+            sut.storageManager.saveFile(this)
+        }
+
         OCFile("/groupFolder/").apply {
+            remoteId = "00000004"
             mimeType = MimeType.DIRECTORY
             modificationTimestamp = 1615003571000
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
@@ -251,10 +282,29 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         }
 
         OCFile("/encrypted/").apply {
+            remoteId = "00000005"
             mimeType = MimeType.DIRECTORY
             isEncrypted = true
             decryptedRemotePath = "/encrypted/"
             modificationTimestamp = 1614003571000
+            parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
+            sut.storageManager.saveFile(this)
+        }
+
+        OCFile("/locked/").apply {
+            remoteId = "00000006"
+            mimeType = MimeType.DIRECTORY
+            isLocked = true
+            decryptedRemotePath = "/locked/"
+            modificationTimestamp = 1613003571000
+            parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
+            sut.storageManager.saveFile(this)
+        }
+
+        OCFile("/offlineOperation/").apply {
+            mimeType = MimeType.DIRECTORY
+            decryptedRemotePath = "/offlineOperation/"
+            modificationTimestamp = System.currentTimeMillis()
             parentId = sut.storageManager.getFileByEncryptedRemotePath("/").fileId
             sut.storageManager.saveFile(this)
         }
@@ -289,12 +339,15 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         folder.setFolder()
         sut.storageManager.saveFile(folder)
 
-        val imageFile = OCFile("/test/image.png")
-        imageFile.mimeType = "image/png"
-        imageFile.fileLength = 1024000
-        imageFile.modificationTimestamp = 1188206955000
-        imageFile.parentId = sut.storageManager.getFileByEncryptedRemotePath("/test/").fileId
-        imageFile.storagePath = getFile("java.md").absolutePath
+        val imageFile = OCFile("/test/image.png").apply {
+            remoteId = "00000001"
+            mimeType = "image/png"
+            fileLength = 1024000
+            modificationTimestamp = 1188206955000
+            parentId = sut.storageManager.getFileByEncryptedRemotePath("/test/").fileId
+            storagePath = getFile("java.md").absolutePath
+        }
+
         sut.storageManager.saveFile(imageFile)
 
         sut.addFragment(fragment)
@@ -313,8 +366,11 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
         val activity = testActivityRule.launchActivity(null)
         val sut = OCFileListFragment()
 
-        val folder = OCFile("/test/")
-        folder.setFolder()
+        val folder = OCFile("/test/").apply {
+            remoteId = "000001"
+            setFolder()
+        }
+
         activity.storageManager.saveFile(folder)
 
         activity.addFragment(sut)
@@ -336,7 +392,7 @@ class OCFileListFragmentStaticServerIT : AbstractIT() {
 
             testFolder.richWorkspace = "1"
             activity.storageManager.saveFile(testFolder)
-            sut.adapter.setCurrentDirectory(testFolder)
+            sut.adapter.currentDirectory = testFolder
             Assert.assertTrue(sut.adapter.shouldShowHeader())
         }
     }

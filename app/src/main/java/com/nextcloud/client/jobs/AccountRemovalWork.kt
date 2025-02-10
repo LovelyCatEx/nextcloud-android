@@ -8,18 +8,7 @@
 * Copyright (C) 2017 Nextcloud GmbH.
 * Copyright (C) 2020 Chris Narkiewicz <hello@ezaquarii.com>
 *
-* This program is free software: you can redistribute it and/or modify
-* it under the terms of the GNU Affero General Public License as published by
-* the Free Software Foundation, either version 3 of the License, or
-* at your option) any later version.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU Affero General Public License for more details.
-*
-* You should have received a copy of the GNU Affero General Public License
-* along with this program.  If not, see <http://www.gnu.org/licenses/>.
+* SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
 */
 package com.nextcloud.client.jobs
 
@@ -33,7 +22,6 @@ import com.nextcloud.client.account.UserAccountManager
 import com.nextcloud.client.core.Clock
 import com.nextcloud.client.preferences.AppPreferences
 import com.nextcloud.common.NextcloudClient
-import com.nextcloud.java.util.Optional
 import com.owncloud.android.MainApp
 import com.owncloud.android.R
 import com.owncloud.android.datamodel.ArbitraryDataProvider
@@ -55,6 +43,7 @@ import com.owncloud.android.ui.events.AccountRemovedEvent
 import com.owncloud.android.utils.EncryptionUtils
 import com.owncloud.android.utils.PushUtils
 import org.greenrobot.eventbus.EventBus
+import java.util.Optional
 
 /**
  * Removes account and all local files

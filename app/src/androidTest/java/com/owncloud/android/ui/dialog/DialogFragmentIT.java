@@ -1,25 +1,10 @@
 /*
+ * Nextcloud - Android Client
  *
- * Nextcloud Android client application
- *
- * @author Tobias Kaminsky
- * Copyright (C) 2020 Tobias Kaminsky
- * Copyright (C) 2020 Nextcloud GmbH
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2020 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2020 Nextcloud GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
-
 package com.owncloud.android.ui.dialog;
 
 import android.accounts.Account;
@@ -35,6 +20,7 @@ import android.widget.TextView;
 
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import com.nextcloud.android.common.ui.color.ColorUtil;
 import com.nextcloud.android.common.ui.theme.MaterialSchemes;
 import com.nextcloud.android.common.ui.theme.MaterialSchemesImpl;
@@ -52,6 +38,7 @@ import com.nextcloud.utils.EditorUtils;
 import com.owncloud.android.AbstractIT;
 import com.owncloud.android.MainApp;
 import com.owncloud.android.R;
+import com.owncloud.android.authentication.EnforcedServer;
 import com.owncloud.android.datamodel.ArbitraryDataProvider;
 import com.owncloud.android.datamodel.ArbitraryDataProviderImpl;
 import com.owncloud.android.datamodel.FileDataStorageManager;
@@ -107,7 +94,7 @@ public class DialogFragmentIT extends AbstractIT {
         Intent intent = new Intent(targetContext, FileDisplayActivity.class);
         return activityRule.launchActivity(intent);
     }
-
+    
 
     @After
     public void quitLooperIfNeeded() {
@@ -132,6 +119,38 @@ public class DialogFragmentIT extends AbstractIT {
     public void testLoadingDialog() {
         LoadingDialog dialog = LoadingDialog.newInstance("Wait…");
         showDialog(dialog);
+    }
+
+    @Test
+    @ScreenshotTest
+    public void testConfirmationDialogWithOneAction() {
+        ConfirmationDialogFragment dialog = ConfirmationDialogFragment.newInstance(R.string.upload_list_empty_text_auto_upload, new String[]{}, R.string.filedetails_sync_file, R.string.common_ok, -1, -1);
+        showDialog(dialog);
+    }
+
+    @Test
+    @ScreenshotTest
+    public void testConfirmationDialogWithTwoAction() {
+        ConfirmationDialogFragment dialog = ConfirmationDialogFragment.newInstance(R.string.upload_list_empty_text_auto_upload, new String[]{}, R.string.filedetails_sync_file, R.string.common_ok, R.string.common_cancel, -1);
+        showDialog(dialog);
+    }
+
+    @Test
+    @ScreenshotTest
+    public void testConfirmationDialogWithThreeAction() {
+        ConfirmationDialogFragment dialog = ConfirmationDialogFragment.newInstance(R.string.upload_list_empty_text_auto_upload, new String[]{}, R.string.filedetails_sync_file, R.string.common_ok, R.string.common_cancel, R.string.common_confirm);
+        showDialog(dialog);
+    }
+
+    @Test
+    @ScreenshotTest
+    public void testConfirmationDialogWithThreeActionRTL() {
+        enableRTL();
+
+        ConfirmationDialogFragment dialog = ConfirmationDialogFragment.newInstance(R.string.upload_list_empty_text_auto_upload, new String[] { }, -1, R.string.common_ok, R.string.common_cancel, R.string.common_confirm);
+        showDialog(dialog);
+
+        resetLocale();
     }
 
     @Test
@@ -216,6 +235,7 @@ public class DialogFragmentIT extends AbstractIT {
         accountManager.setUserData(newAccount, AccountUtils.Constants.KEY_USER_ID, "test");
         accountManager.setAuthToken(newAccount, AccountTypeUtils.getAuthTokenTypePass(newAccount.type), "password");
         User newUser = userAccountManager.getUser(newAccount.name).orElseThrow(RuntimeException::new);
+        userAccountManager.setCurrentOwnCloudAccount(newAccount.name);
 
         Account newAccount2 = new Account("user1@nextcloud.localhost", MainApp.getAccountType(targetContext));
         accountManager.addAccountExplicitly(newAccount2, "password", null);
@@ -372,6 +392,7 @@ public class DialogFragmentIT extends AbstractIT {
 
         DeviceInfo info = new DeviceInfo();
         OCFile ocFile = new OCFile("/test.md");
+        ocFile.setRemoteId("00000001");
 
         Intent intent = new Intent(targetContext, FileDisplayActivity.class);
         FileDisplayActivity fda = activityRule.launchActivity(intent);
@@ -539,8 +560,8 @@ public class DialogFragmentIT extends AbstractIT {
 
         final SslCertificate certificate = new SslCertificate("foo", "bar", "2022/01/10", "2022/01/30");
         final SslError sslError = new SslError(SslError.SSL_UNTRUSTED, certificate);
-        final SslErrorHandler handler = Mockito.mock(SslErrorHandler.class);
 
+        final SslErrorHandler handler = Mockito.mock(SslErrorHandler.class);
 
         SslUntrustedCertDialog sut = SslUntrustedCertDialog.newInstanceForEmptySslError(sslError, handler);
         showDialog(sut);
@@ -607,6 +628,23 @@ public class DialogFragmentIT extends AbstractIT {
             if (child instanceof TextView) {
                 ((TextView) child).setCursorVisible(false);
             }
+        }
+    }
+    
+    @Test
+    public void testGson() {
+        ArrayList<EnforcedServer> t = new ArrayList<>();
+        t.add(new EnforcedServer("name", "url"));
+        t.add(new EnforcedServer("name2", "url1"));
+        
+        String s = new Gson().toJson(t);
+
+        ArrayList<EnforcedServer> t2 = new Gson().fromJson(s, new TypeToken<ArrayList<EnforcedServer>>() {
+        }.getType());
+
+        ArrayList<String> temp = new ArrayList<>();
+        for (EnforcedServer p : t2) {
+            temp.add(p.getName());
         }
     }
 }

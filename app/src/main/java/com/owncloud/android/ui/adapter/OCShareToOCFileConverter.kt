@@ -1,24 +1,10 @@
 /*
- * Nextcloud Android client application
+ * Nextcloud - Android Client
  *
- * @author Álvaro Brey Vilas
- * Copyright (C) 2022 Álvaro Brey Vilas
- * Copyright (C) 2022 Nextcloud GmbH
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2022 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2022 Nextcloud GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-
 package com.owncloud.android.ui.adapter
 
 import com.owncloud.android.datamodel.OCFile
@@ -30,11 +16,15 @@ object OCShareToOCFileConverter {
     private const val MILLIS_PER_SECOND = 1000
 
     /**
-     * Generates a list of incomplete [OCFile] from a list of [OCShare]
+     * Generates a list of incomplete [OCFile] from a list of [OCShare]. Retrieving OCFile directly by path may fail
+     * in cases like
+     * when a shared file is located at a/b/c/d/a.txt. To display a.txt in the shared tab, the device needs the OCFile.
+     * On first launch, the app may not be aware of the file until the exact path is accessed.
      *
-     * This is actually pretty complex as we get one [OCShare] item for each shared instance for the same folder
+     * Server implementation needed to get file size, thumbnails e.g. :
+     * <a href="https://github.com/nextcloud/server/issues/4456g</a>.
      *
-     * **THIS ONLY WORKS WITH FILES SHARED *BY* THE USER, NOT FOR SHARES *WITH* THE USER**
+     * Note: This works only for files shared *by* the user, not files shared *with* the user.
      */
     @JvmStatic
     fun buildOCFilesFromShares(shares: List<OCShare>): List<OCFile> {

@@ -1,29 +1,15 @@
 /*
- * Nextcloud Android client application
+ * Nextcloud - Android Client
  *
- * @author Tobias Kaminsky
- * @author Chris Narkiewicz
- *
- * Copyright (C) 2018 Tobias Kaminsky
- * Copyright (C) 2018 Nextcloud GmbH.
- * Copyright (C) 2019 Chris Narkiewicz <hello@ezaquarii.com>
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2024 Alper Ozturk <alper.ozturk@nextcloud.com>
+ * SPDX-FileCopyrightText: 2019 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-FileCopyrightText: 2018 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2018 Nextcloud GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
-
 package com.owncloud.android.ui.adapter;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.drawable.Drawable;
 import android.view.LayoutInflater;
@@ -51,11 +37,11 @@ import androidx.recyclerview.widget.RecyclerView;
 public class TemplateAdapter extends RecyclerView.Adapter<TemplateAdapter.ViewHolder> {
 
     private TemplateList templateList = new TemplateList();
-    private ClickListener clickListener;
-    private Context context;
-    private CurrentAccountProvider currentAccountProvider;
-    private ClientFactory clientFactory;
-    private String mimetype;
+    private final ClickListener clickListener;
+    private final Context context;
+    private final CurrentAccountProvider currentAccountProvider;
+    private final ClientFactory clientFactory;
+    private final String mimetype;
     private Template selectedTemplate;
     private final ViewThemeUtils viewThemeUtils;
 
@@ -94,6 +80,7 @@ public class TemplateAdapter extends RecyclerView.Adapter<TemplateAdapter.ViewHo
         this.templateList = templateList;
     }
 
+    @SuppressLint("NotifyDataSetChanged")
     public void setTemplateAsActive(Template template) {
         selectedTemplate = template;
         notifyDataSetChanged();
@@ -117,7 +104,8 @@ public class TemplateAdapter extends RecyclerView.Adapter<TemplateAdapter.ViewHo
             super(binding.getRoot());
             this.binding = binding;
             viewThemeUtils.files.themeTemplateCardView(this.binding.templateContainer);
-            itemView.setOnClickListener(this);
+            binding.templateLayout.setOnClickListener(this);
+            binding.templateContainer.setOnClickListener(this);
         }
 
         @Override

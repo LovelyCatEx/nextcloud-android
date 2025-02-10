@@ -1,32 +1,23 @@
 /*
- * ownCloud Android client application
+ * Nextcloud - Android Client
  *
- * @author masensio
- * @author David A. Velasco
- * @author Juan Carlos González Cabrero
- * Copyright (C) 2015 ownCloud Inc.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2,
- * as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2018-2022 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2019 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-FileCopyrightText: 2017 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-FileCopyrightText: 2016 ownCloud Inc.
+ * SPDX-FileCopyrightText: 2016 Juan Carlos González Cabrero <malkomich@gmail.com>
+ * SPDX-FileCopyrightText: 2015 David A. Velasco <dvelasco@solidgear.es>
+ * SPDX-FileCopyrightText: 2015 María Asensio Valverde <masensio@solidgear.es>
+ * SPDX-License-Identifier: GPL-2.0-only AND (AGPL-3.0-or-later OR GPL-2.0-only)
  */
-
 package com.owncloud.android.ui.activity;
 
 import android.app.Activity;
 import android.graphics.Bitmap;
+import android.graphics.drawable.LayerDrawable;
 import android.os.Bundle;
 
 import com.nextcloud.client.account.User;
-import com.nextcloud.java.util.Optional;
 import com.owncloud.android.R;
 import com.owncloud.android.databinding.ShareActivityBinding;
 import com.owncloud.android.datamodel.OCFile;
@@ -43,6 +34,8 @@ import com.owncloud.android.ui.fragment.FileDetailSharingFragment;
 import com.owncloud.android.ui.fragment.FileDetailsSharingProcessFragment;
 import com.owncloud.android.utils.DisplayUtils;
 import com.owncloud.android.utils.MimeTypeUtil;
+
+import java.util.Optional;
 
 import javax.inject.Inject;
 
@@ -77,15 +70,11 @@ public class ShareActivity extends FileActivity {
 
         // Icon
         if (file.isFolder()) {
-            binding.shareFileIcon.setImageDrawable(MimeTypeUtil.getFolderTypeIcon(file.isSharedWithMe() ||
-                                                                                      file.isSharedWithSharee(),
-                                                                                  file.isSharedViaLink(),
-                                                                                  file.isEncrypted(),
-                                                                                  syncedFolderProvider.findByRemotePathAndAccount(file.getRemotePath(), optionalUser.get()),
-                                                                                  file.isGroupFolder(),
-                                                                                  file.getMountType(),
-                                                                                  this,
-                                                                                  viewThemeUtils));
+            boolean isAutoUploadFolder = SyncedFolderProvider.isAutoUploadFolder(syncedFolderProvider, file, optionalUser.get());
+
+            Integer overlayIconId = file.getFileOverlayIconId(isAutoUploadFolder);
+            LayerDrawable drawable = MimeTypeUtil.getFolderIcon(preferences.isDarkModeEnabled(), overlayIconId, this, viewThemeUtils);
+            binding.shareFileIcon.setImageDrawable(drawable);
         } else {
             binding.shareFileIcon.setImageDrawable(MimeTypeUtil.getFileTypeIcon(file.getMimeType(),
                                                                                 file.getFileName(),
@@ -146,7 +135,8 @@ public class ShareActivity extends FileActivity {
         getSupportFragmentManager().beginTransaction().replace(R.id.share_fragment_container,
                                                                FileDetailsSharingProcessFragment.newInstance(getFile(),
                                                                                                              shareeName,
-                                                                                                             shareType),
+                                                                                                             shareType,
+                                                                                                             false),
                                                                FileDetailsSharingProcessFragment.TAG)
             .commit();
     }

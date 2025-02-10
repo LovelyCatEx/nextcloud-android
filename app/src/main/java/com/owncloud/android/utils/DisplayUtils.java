@@ -1,30 +1,24 @@
 /*
- * Nextcloud Android client application
+ * Nextcloud - Android Client
  *
- * @author Andy Scherzinger
- * @author Bartek Przybylski
- * @author David A. Velasco
- * @author Chris Narkiewicz <hello@ezaquarii.com>
- *
- * Copyright (C) 2011  Bartek Przybylski
- * Copyright (C) 2015 ownCloud Inc.
- * Copyright (C) 2016 Andy Scherzinger
- * Copyright (C) 2020 Chris Narkiewicz <hello@ezaquarii.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU AFFERO GENERAL PUBLIC LICENSE
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU AFFERO GENERAL PUBLIC LICENSE for more details.
- *
- * You should have received a copy of the GNU Affero General Public
- * License along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2024 Alper Ozturk <alper.ozturk@nextcloud.com>
+ * SPDX-FileCopyrightText: 2023 ZetaTom
+ * SPDX-FileCopyrightText: 2022 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2021 TSI-mc
+ * SPDX-FileCopyrightText: 2020 Infomaniak Network SA
+ * SPDX-FileCopyrightText: 2020 Joris Bodin <joris.bodin@infomaniak.com>
+ * SPDX-FileCopyrightText: 2020 Kilian Périsset <kilian.perisset@infomaniak.com>
+ * SPDX-FileCopyrightText: 2020 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-FileCopyrightText: 2018-2020 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2017 Harikrishnan Rajan <rhari991@gmail.com>
+ * SPDX-FileCopyrightText: 2017 Alejandro Morales <aleister09@gmail.com>
+ * SPDX-FileCopyrightText: 2016 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-FileCopyrightText: 2016 ownCloud Inc.
+ * SPDX-FileCopyrightText: 2015 David A. Velasco <dvelasco@solidgear.es>
+ * SPDX-FileCopyrightText: 2012 Lennart Rosam <lennart@familie-rosam.de>
+ * SPDX-FileCopyrightText: 2011 Bartosz Przybylski <bart.p.pl@gmail.com>
+ * SPDX-License-Identifier: GPL-2.0-only AND (AGPL-3.0-or-later OR GPL-2.0-only)
  */
-
 package com.owncloud.android.utils;
 
 import android.accounts.AccountManager;
@@ -38,6 +32,7 @@ import android.graphics.Color;
 import android.graphics.Point;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.LayerDrawable;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.text.Spannable;
@@ -115,12 +110,12 @@ import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentTransaction;
 
 import static com.owncloud.android.ui.dialog.SortingOrderDialogFragment.SORTING_ORDER_FRAGMENT;
-import static com.owncloud.android.utils.FileSortOrder.sort_a_to_z_id;
-import static com.owncloud.android.utils.FileSortOrder.sort_big_to_small_id;
-import static com.owncloud.android.utils.FileSortOrder.sort_new_to_old_id;
-import static com.owncloud.android.utils.FileSortOrder.sort_old_to_new_id;
-import static com.owncloud.android.utils.FileSortOrder.sort_small_to_big_id;
-import static com.owncloud.android.utils.FileSortOrder.sort_z_to_a_id;
+import static com.owncloud.android.utils.FileSortOrder.SORT_A_TO_Z_ID;
+import static com.owncloud.android.utils.FileSortOrder.SORT_BIG_TO_SMALL_ID;
+import static com.owncloud.android.utils.FileSortOrder.SORT_NEW_TO_OLD_ID;
+import static com.owncloud.android.utils.FileSortOrder.SORT_OLD_TO_NEW_ID;
+import static com.owncloud.android.utils.FileSortOrder.SORT_SMALL_TO_BIG_ID;
+import static com.owncloud.android.utils.FileSortOrder.SORT_Z_TO_A_ID;
 
 /**
  * A helper class for UI/display related operations.
@@ -179,7 +174,7 @@ public final class DisplayUtils {
      */
     public static String bytesToHumanReadable(long bytes) {
         if (bytes < 0) {
-            return MainApp.getAppContext().getString(R.string.common_pending);
+            return MainApp.string(R.string.common_pending);
         } else {
             double result = bytes;
             int suffixIndex = 0;
@@ -293,7 +288,7 @@ public final class DisplayUtils {
             hostStart = url.indexOf('@') + "@".length();
         }
 
-        int hostEnd = url.substring(hostStart).indexOf("/");
+        int hostEnd = url.substring(hostStart).indexOf('/');
         // Handle URL which doesn't have a path (path is implicitly '/')
         hostEnd = hostEnd == -1 ? urlNoDots.length() : hostStart + hostEnd;
 
@@ -655,8 +650,20 @@ public final class DisplayUtils {
      */
     public static Snackbar showSnackMessage(Activity activity, String message) {
         final Snackbar snackbar = Snackbar.make(activity.findViewById(android.R.id.content), message, Snackbar.LENGTH_LONG);
+        var fab = findFABView(activity);
+        if (fab != null && fab.getVisibility() == View.VISIBLE) {
+            snackbar.setAnchorView(fab);
+        }
         snackbar.show();
         return snackbar;
+    }
+
+    private static View findFABView(Activity activity) {
+        return activity.findViewById(R.id.fab_main);
+    }
+
+    private static View findFABView(View view) {
+        return view.findViewById(R.id.fab_main);
     }
 
     /**
@@ -668,6 +675,10 @@ public final class DisplayUtils {
      */
     public static Snackbar showSnackMessage(View view, @StringRes int messageResource) {
         final Snackbar snackbar = Snackbar.make(view, messageResource, Snackbar.LENGTH_LONG);
+        var fab = findFABView(view.getRootView());
+        if (fab != null && fab.getVisibility() == View.VISIBLE) {
+            snackbar.setAnchorView(fab);
+        }
         snackbar.show();
         return snackbar;
     }
@@ -775,13 +786,15 @@ public final class DisplayUtils {
         startLinkIntent(activity, activity.getString(link));
     }
 
-    static public void startLinkIntent(Activity activity, Uri url) {
-        Intent intent = new Intent(Intent.ACTION_VIEW, url);
-        DisplayUtils.startIntentIfAppAvailable(intent, activity, R.string.no_browser_available);
+    static public void startLinkIntent(Activity activity, String url) {
+        if (!TextUtils.isEmpty(url)) {
+            startLinkIntent(activity, Uri.parse(url));
+        }
     }
 
-    static public void startLinkIntent(Activity activity, String url) {
-        startLinkIntent(activity, Uri.parse(url));
+    static public void startLinkIntent(Activity activity, Uri uri) {
+        Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+        DisplayUtils.startIntentIfAppAvailable(intent, activity, R.string.no_browser_available);
     }
 
     static public void startIntentIfAppAvailable(Intent intent, Activity activity, @StringRes int error) {
@@ -806,17 +819,17 @@ public final class DisplayUtils {
 
     public static @StringRes int getSortOrderStringId(FileSortOrder sortOrder) {
         switch (sortOrder.name) {
-            case sort_z_to_a_id:
+            case SORT_Z_TO_A_ID:
                 return R.string.menu_item_sort_by_name_z_a;
-            case sort_new_to_old_id:
+            case SORT_NEW_TO_OLD_ID:
                 return R.string.menu_item_sort_by_date_newest_first;
-            case sort_old_to_new_id:
+            case SORT_OLD_TO_NEW_ID:
                 return R.string.menu_item_sort_by_date_oldest_first;
-            case sort_big_to_small_id:
+            case SORT_BIG_TO_SMALL_ID:
                 return R.string.menu_item_sort_by_size_biggest_first;
-            case sort_small_to_big_id:
+            case SORT_SMALL_TO_BIG_ID:
                 return R.string.menu_item_sort_by_size_smallest_first;
-            case sort_a_to_z_id:
+            case SORT_A_TO_Z_ID:
             default:
                 return R.string.menu_item_sort_by_name_a_z;
         }
@@ -850,21 +863,18 @@ public final class DisplayUtils {
                                     SyncedFolderProvider syncedFolderProvider) {
         if (file.isFolder()) {
             stopShimmer(shimmerThumbnail, thumbnailView);
-            thumbnailView.setImageDrawable(MimeTypeUtil
-                                               .getFolderTypeIcon(file.isSharedWithMe() || file.isSharedWithSharee(),
-                                                                  file.isSharedViaLink(),
-                                                                  file.isEncrypted(),
-                                                                  syncedFolderProvider != null && syncedFolderProvider.findByRemotePathAndAccount(file.getRemotePath(), user),
-                                                                  file.isGroupFolder(),
-                                                                  file.getMountType(),
-                                                                  context,
-                                                                  viewThemeUtils));
+
+            boolean isAutoUploadFolder = SyncedFolderProvider.isAutoUploadFolder(syncedFolderProvider, file, user);
+            boolean isDarkModeActive = preferences.isDarkModeEnabled();
+
+            Integer overlayIconId = file.getFileOverlayIconId(isAutoUploadFolder);
+            LayerDrawable fileIcon = MimeTypeUtil.getFolderIcon(isDarkModeActive, overlayIconId, context, viewThemeUtils);
+            thumbnailView.setImageDrawable(fileIcon);
         } else {
             if (file.getRemoteId() != null && file.isPreviewAvailable()) {
                 // Thumbnail in cache?
                 Bitmap thumbnail = ThumbnailsCacheManager.getBitmapFromDiskCache(
-                    ThumbnailsCacheManager.PREFIX_THUMBNAIL + file.getRemoteId()
-                                                                                );
+                    ThumbnailsCacheManager.PREFIX_THUMBNAIL + file.getRemoteId());
 
                 if (thumbnail != null && !file.isUpdateThumbnailNeeded()) {
                     stopShimmer(shimmerThumbnail, thumbnailView);
@@ -880,83 +890,114 @@ public final class DisplayUtils {
                         }
                     }
                 } else {
-                    // generate new thumbnail
-                    if (ThumbnailsCacheManager.cancelPotentialThumbnailWork(file, thumbnailView)) {
-                        for (ThumbnailsCacheManager.ThumbnailGenerationTask task : asyncTasks) {
-                            if (file.getRemoteId() != null && task.getImageKey() != null &&
-                                file.getRemoteId().equals(task.getImageKey())) {
-                                return;
-                            }
-                        }
-                        try {
-                            final ThumbnailsCacheManager.ThumbnailGenerationTask task =
-                                new ThumbnailsCacheManager.ThumbnailGenerationTask(thumbnailView,
-                                                                                   storageManager,
-                                                                                   user,
-                                                                                   asyncTasks,
-                                                                                   gridView,
-                                                                                   file.getRemoteId());
-                            if (thumbnail == null) {
-                                Drawable drawable = MimeTypeUtil.getFileTypeIcon(file.getMimeType(),
-                                                                                 file.getFileName(),
-                                                                                 context,
-                                                                                 viewThemeUtils);
-                                if (drawable == null) {
-                                    drawable = ResourcesCompat.getDrawable(context.getResources(),
-                                                                           R.drawable.file_image,
-                                                                           null);
-                                }
-                                if (drawable == null) {
-                                    drawable = new ColorDrawable(Color.GRAY);
-                                }
-
-                                int px = ThumbnailsCacheManager.getThumbnailDimension();
-                                thumbnail = BitmapUtils.drawableToBitmap(drawable, px, px);
-                            }
-                            final ThumbnailsCacheManager.AsyncThumbnailDrawable asyncDrawable =
-                                new ThumbnailsCacheManager.AsyncThumbnailDrawable(context.getResources(),
-                                                                                  thumbnail, task);
-
-                            if (shimmerThumbnail != null && shimmerThumbnail.getVisibility() == View.GONE) {
-                                if (gridView) {
-                                    configShimmerGridImageSize(shimmerThumbnail, preferences.getGridColumns());
-                                }
-                                startShimmer(shimmerThumbnail, thumbnailView);
-                            }
-
-                            task.setListener(new ThumbnailsCacheManager.ThumbnailGenerationTask.Listener() {
-                                @Override
-                                public void onSuccess() {
-                                    stopShimmer(shimmerThumbnail, thumbnailView);
-                                }
-
-                                @Override
-                                public void onError() {
-                                    stopShimmer(shimmerThumbnail, thumbnailView);
-                                }
-                            });
-
-                            thumbnailView.setImageDrawable(asyncDrawable);
-                            asyncTasks.add(task);
-                            task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR,
-                                                   new ThumbnailsCacheManager.ThumbnailGenerationTaskObject(file,
-                                                                                                            file.getRemoteId()));
-                        } catch (IllegalArgumentException e) {
-                            Log_OC.d(TAG, "ThumbnailGenerationTask : " + e.getMessage());
-                        }
-                    }
+                    generateNewThumbnail(file, thumbnailView, user, storageManager, asyncTasks, gridView, context, shimmerThumbnail, preferences, viewThemeUtils);
                 }
 
                 if ("image/png".equalsIgnoreCase(file.getMimeType())) {
                     thumbnailView.setBackgroundColor(context.getResources().getColor(R.color.bg_default));
                 }
             } else {
-                stopShimmer(shimmerThumbnail, thumbnailView);
-                thumbnailView.setImageDrawable(MimeTypeUtil.getFileTypeIcon(file.getMimeType(),
-                                                                            file.getFileName(),
-                                                                            context,
-                                                                            viewThemeUtils));
+                if (file.getRemoteId() != null) {
+                    generateNewThumbnail(file, thumbnailView, user, storageManager, asyncTasks, gridView, context, shimmerThumbnail, preferences, viewThemeUtils);
+                } else {
+                    stopShimmer(shimmerThumbnail, thumbnailView);
+                    thumbnailView.setImageDrawable(MimeTypeUtil.getFileTypeIcon(file.getMimeType(),
+                                                                                file.getFileName(),
+                                                                                context,
+                                                                                viewThemeUtils));
+                }
             }
+        }
+    }
+
+    private static void generateNewThumbnail(OCFile file,
+                                             ImageView thumbnailView,
+                                             User user,
+                                             FileDataStorageManager storageManager,
+                                             List<ThumbnailsCacheManager.ThumbnailGenerationTask> asyncTasks,
+                                             boolean gridView,
+                                             Context context,
+                                             LoaderImageView shimmerThumbnail,
+                                             AppPreferences preferences,
+                                             ViewThemeUtils viewThemeUtils) {
+        if (!ThumbnailsCacheManager.cancelPotentialThumbnailWork(file, thumbnailView)) {
+            return;
+        }
+
+        Bitmap thumbnail = ThumbnailsCacheManager.getBitmapFromDiskCache(
+            ThumbnailsCacheManager.PREFIX_THUMBNAIL + file.getRemoteId());
+
+        if (thumbnail != null) {
+            // If thumbnail is already in cache, display it immediately
+            thumbnailView.setImageBitmap(thumbnail);
+            stopShimmer(shimmerThumbnail, thumbnailView);
+            return;
+        }
+
+        for (ThumbnailsCacheManager.ThumbnailGenerationTask task : asyncTasks) {
+            if (file.getRemoteId() != null && task.getImageKey() != null &&
+                file.getRemoteId().equals(task.getImageKey())) {
+                return;
+            }
+        }
+
+        try {
+            final ThumbnailsCacheManager.ThumbnailGenerationTask task =
+                new ThumbnailsCacheManager.ThumbnailGenerationTask(thumbnailView,
+                                                                   storageManager,
+                                                                   user,
+                                                                   asyncTasks,
+                                                                   gridView,
+                                                                   file.getRemoteId());
+            Drawable drawable = MimeTypeUtil.getFileTypeIcon(file.getMimeType(),
+                                                             file.getFileName(),
+                                                             context,
+                                                             viewThemeUtils);
+            if (drawable == null) {
+                drawable = ResourcesCompat.getDrawable(context.getResources(),
+                                                       R.drawable.file_image,
+                                                       null);
+            }
+            if (drawable == null) {
+                drawable = new ColorDrawable(Color.GRAY);
+            }
+
+            int px = ThumbnailsCacheManager.getThumbnailDimension();
+            thumbnail = BitmapUtils.drawableToBitmap(drawable, px, px);
+            final ThumbnailsCacheManager.AsyncThumbnailDrawable asyncDrawable =
+                new ThumbnailsCacheManager.AsyncThumbnailDrawable(context.getResources(),
+                                                                  thumbnail, task);
+
+            if (shimmerThumbnail != null) {
+                shimmerThumbnail.postDelayed(() -> {
+                    if (thumbnailView.getDrawable() == null) {
+                        if (gridView) {
+                            configShimmerGridImageSize(shimmerThumbnail, preferences.getGridColumns());
+                        }
+                        startShimmer(shimmerThumbnail, thumbnailView);
+                    }
+                }, 100);
+            }
+
+            task.setListener(new ThumbnailsCacheManager.ThumbnailGenerationTask.Listener() {
+                @Override
+                public void onSuccess() {
+                    stopShimmer(shimmerThumbnail, thumbnailView);
+                }
+
+                @Override
+                public void onError() {
+                    stopShimmer(shimmerThumbnail, thumbnailView);
+                }
+            });
+
+            thumbnailView.setImageDrawable(asyncDrawable);
+            asyncTasks.add(task);
+            task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR,
+                                   new ThumbnailsCacheManager.ThumbnailGenerationTaskObject(file,
+                                                                                            file.getRemoteId()));
+        } catch (IllegalArgumentException e) {
+            Log_OC.d(TAG, "ThumbnailGenerationTask : " + e.getMessage());
         }
     }
 
@@ -976,9 +1017,9 @@ public final class DisplayUtils {
     }
 
     private static void configShimmerGridImageSize(LoaderImageView thumbnailShimmer, float gridColumns) {
-        FrameLayout.LayoutParams targetLayoutParams = (FrameLayout.LayoutParams) thumbnailShimmer.getLayoutParams();
-
         try {
+            FrameLayout.LayoutParams targetLayoutParams = (FrameLayout.LayoutParams) thumbnailShimmer.getLayoutParams();
+
             final Point screenSize = getScreenSize(thumbnailShimmer.getContext());
             final int marginLeftAndRight = targetLayoutParams.leftMargin + targetLayoutParams.rightMargin;
             final int size = Math.round(screenSize.x / gridColumns - marginLeftAndRight);

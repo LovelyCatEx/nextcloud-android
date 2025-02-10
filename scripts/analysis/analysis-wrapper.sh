@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# SPDX-FileCopyrightText: 2016-2024 Nextcloud GmbH and Nextcloud contributors
+# SPDX-FileCopyrightText: 2016 Tobias Kaminsky <tobias@kaminsky.me>
+# SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
+
 BRANCH=$1
 LOG_USERNAME=$2
 LOG_PASSWORD=$3
@@ -14,6 +18,8 @@ ruby scripts/analysis/lint-up.rb
 lintValue=$?
 
 curl "https://www.kaminsky.me/nc-dev/$repository-findbugs/$stableBranch.xml" -o "/tmp/$stableBranch.xml"
+[[ ! -e "/tmp/$stableBranch.xml" ]] && exit 1
+
 ruby scripts/analysis/spotbugs-up.rb "$stableBranch"
 spotbugsValue=$?
 
@@ -28,12 +34,12 @@ echo "Branch: $BRANCH"
 
 if [ "$BRANCH" = $stableBranch ]; then
     echo "New spotbugs result for $stableBranch at: https://www.kaminsky.me/nc-dev/$repository-findbugs/$stableBranch.html"
-    curl -u "${LOG_USERNAME}:${LOG_PASSWORD}" -X PUT https://nextcloud.kaminsky.me/remote.php/webdav/$repository-findbugs/$stableBranch.html --upload-file app/build/reports/spotbugs/spotbugs.html
-    curl 2>/dev/null -u "${LOG_USERNAME}:${LOG_PASSWORD}" -X PUT "https://nextcloud.kaminsky.me/remote.php/webdav/$repository-findbugs/$stableBranch.xml" --upload-file app/build/reports/spotbugs/gplayDebug.xml
+    curl -u "${LOG_USERNAME}:${LOG_PASSWORD}" -X PUT https://nextcloud.kaminsky.me/remote.php/dav/files/${LOG_USERNAME}/$repository-findbugs/$stableBranch.html --upload-file app/build/reports/spotbugs/spotbugs.html
+    curl 2>/dev/null -u "${LOG_USERNAME}:${LOG_PASSWORD}" -X PUT "https://nextcloud.kaminsky.me/remote.php/dav/files/${LOG_USERNAME}/$repository-findbugs/$stableBranch.xml" --upload-file app/build/reports/spotbugs/gplayDebug.xml
 
     if [ $lintValue -ne 1 ]; then
         echo "New lint result for $stableBranch at: https://www.kaminsky.me/nc-dev/$repository-lint/$stableBranch.html"
-        curl -u "${LOG_USERNAME}:${LOG_PASSWORD}" -X PUT https://nextcloud.kaminsky.me/remote.php/webdav/$repository-lint/$stableBranch.html --upload-file app/build/reports/lint/lint.html
+        curl -u "${LOG_USERNAME}:${LOG_PASSWORD}" -X PUT https://nextcloud.kaminsky.me/remote.php/dav/files/${LOG_USERNAME}/$repository-lint/$stableBranch.html --upload-file app/build/reports/lint/lint.html
         exit 0
     fi
 else
@@ -41,10 +47,10 @@ else
         6=$stableBranch"-"$(date +%F)
     fi
     echo "New lint results at https://www.kaminsky.me/nc-dev/$repository-lint/${BUILD_NUMBER}.html"
-    curl 2>/dev/null -u "${LOG_USERNAME}:${LOG_PASSWORD}" -X PUT "https://nextcloud.kaminsky.me/remote.php/webdav/$repository-lint/${BUILD_NUMBER}.html" --upload-file app/build/reports/lint/lint.html
+    curl 2>/dev/null -u "${LOG_USERNAME}:${LOG_PASSWORD}" -X PUT "https://nextcloud.kaminsky.me/remote.php/dav/files/${LOG_USERNAME}/$repository-lint/${BUILD_NUMBER}.html" --upload-file app/build/reports/lint/lint.html
 
     echo "New spotbugs results at https://www.kaminsky.me/nc-dev/$repository-findbugs/${BUILD_NUMBER}.html"
-    curl 2>/dev/null -u "${LOG_USERNAME}:${LOG_PASSWORD}" -X PUT "https://nextcloud.kaminsky.me/remote.php/webdav/$repository-findbugs/${BUILD_NUMBER}.html" --upload-file app/build/reports/spotbugs/spotbugs.html
+    curl 2>/dev/null -u "${LOG_USERNAME}:${LOG_PASSWORD}" -X PUT "https://nextcloud.kaminsky.me/remote.php/dav/files/${LOG_USERNAME}/$repository-findbugs/${BUILD_NUMBER}.html" --upload-file app/build/reports/spotbugs/spotbugs.html
 
     # delete all old comments, starting with Codacy
     oldComments=$(curl_gh -X GET "https://api.github.com/repos/nextcloud/$repository/issues/${PR_NUMBER}/comments" | jq '.[] | select((.user.login | contains("github-actions")) and  (.body | test("<h1>Codacy.*"))) | .id')
@@ -52,18 +58,6 @@ else
     echo "$oldComments" | while read -r comment ; do
         curl_gh -X DELETE "https://api.github.com/repos/nextcloud/$repository/issues/comments/$comment"
     done
-
-    # check library, only if base branch is master
-    baseBranch=$(scripts/analysis/getBranchBase.sh "${PR_NUMBER}" | tr -d "\"")
-    if [ $baseBranch = "master" -a $(grep "androidLibraryVersion = \"master-SNAPSHOT\"" build.gradle -c) -ne 1 ]; then
-        checkLibraryMessage="<h1>Android-library is not set to master branch in build.gradle</h1>"
-        checkLibrary=1
-    elif [ $baseBranch != "master" -a $baseBranch = $stableBranch -a $(grep "androidLibraryVersion.*SNAPSHOT" build.gradle -c) -ne 0 ]; then
-        checkLibraryMessage="<h1>Android-library is set to a SNAPSHOT in build.gradle</h1>"
-        checkLibrary=1
-    else
-        checkLibrary=0
-    fi
 
     # lint and spotbugs file must exist
     if [ ! -s app/build/reports/lint/lint.html ] ; then
@@ -128,19 +122,15 @@ else
 
     # check for NotNull
     if [[ $(grep org.jetbrains.annotations app/src/main/* -irl | wc -l) -gt 0 ]] ; then
-        notNull="org.jetbrains.annotations.NotNull is used. Please use androidx.annotation.NonNull instead.<br><br>"
+        notNull="org.jetbrains.annotations.* is used. Please use androidx.annotation.* instead.<br><br>"
     fi
 
-    bodyContent="$codacyResult $lintResult $spotbugsResult $checkLibraryMessage $lintMessage $spotbugsMessage $gplayLimitation $notNull"
+    bodyContent="$codacyResult $lintResult $spotbugsResult $lintMessage $spotbugsMessage $gplayLimitation $notNull"
     echo "$bodyContent" >> "$GITHUB_STEP_SUMMARY"
     payload="{ \"body\" : \"$bodyContent\" }"
     curl_gh -X POST "https://api.github.com/repos/nextcloud/$repository/issues/${PR_NUMBER}/comments" -d "$payload"
 
     if [ ! -z "$gplayLimitation" ]; then
-        exit 1
-    fi
-
-    if [ $checkLibrary -eq 1 ]; then
         exit 1
     fi
 

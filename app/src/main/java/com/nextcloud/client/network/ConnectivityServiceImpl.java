@@ -4,18 +4,7 @@
  * @author Chris Narkiewicz
  * Copyright (C) 2021 Chris Narkiewicz <hello@ezaquarii.com>
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
 
 package com.nextcloud.client.network;
@@ -24,6 +13,8 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
+import android.os.Handler;
+import android.os.Looper;
 
 import com.nextcloud.client.account.Server;
 import com.nextcloud.client.account.UserAccountManager;
@@ -33,6 +24,7 @@ import com.owncloud.android.lib.common.utils.Log_OC;
 
 import org.apache.commons.httpclient.HttpStatus;
 
+import androidx.annotation.NonNull;
 import androidx.core.net.ConnectivityManagerCompat;
 import kotlin.jvm.functions.Function1;
 
@@ -46,7 +38,7 @@ class ConnectivityServiceImpl implements ConnectivityService {
     private final ClientFactory clientFactory;
     private final GetRequestBuilder requestBuilder;
     private final WalledCheckCache walledCheckCache;
-
+    private final Handler mainThreadHandler = new Handler(Looper.getMainLooper());
 
     static class GetRequestBuilder implements Function1<String, GetMethod> {
         @Override
@@ -68,33 +60,61 @@ class ConnectivityServiceImpl implements ConnectivityService {
     }
 
     @Override
+    public void isNetworkAndServerAvailable(@NonNull GenericCallback<Boolean> callback) {
+        new Thread(() -> {
+            Network activeNetwork = platformConnectivityManager.getActiveNetwork();
+            NetworkCapabilities networkCapabilities = platformConnectivityManager.getNetworkCapabilities(activeNetwork);
+            boolean hasInternet = networkCapabilities != null && networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+
+            boolean result;
+            if (hasInternet) {
+                result = !isInternetWalled();
+            } else {
+                result = false;
+            }
+
+            mainThreadHandler.post(() -> callback.onComplete(result));
+        }).start();
+    }
+
+    @Override
+    public boolean isConnected() {
+        Network nw = platformConnectivityManager.getActiveNetwork();
+        NetworkCapabilities actNw = platformConnectivityManager.getNetworkCapabilities(nw);
+
+        if (actNw == null) {
+            return false;
+        }
+
+        return actNw.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            actNw.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+            actNw.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+            actNw.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH);
+    }
+
+    @Override
     public boolean isInternetWalled() {
         final Boolean cachedValue = walledCheckCache.getValue();
         if (cachedValue != null) {
             return cachedValue;
         } else {
+            Server server = accountManager.getUser().getServer();
+            String baseServerAddress = server.getUri().toString();
+
             boolean result;
             Connectivity c = getConnectivity();
-            if (c.isConnected() && c.isWifi() && !c.isMetered()) {
+            if (c.isConnected() && c.isWifi() && !c.isMetered() && !baseServerAddress.isEmpty()) {
+                GetMethod get = requestBuilder.invoke(baseServerAddress + CONNECTIVITY_CHECK_ROUTE);
+                PlainClient client = clientFactory.createPlainClient();
 
-                Server server = accountManager.getUser().getServer();
-                String baseServerAddress = server.getUri().toString();
-                if (baseServerAddress.isEmpty()) {
-                    result = true;
-                } else {
+                int status = get.execute(client);
 
-                    GetMethod get = requestBuilder.invoke(baseServerAddress + CONNECTIVITY_CHECK_ROUTE);
-                    PlainClient client = clientFactory.createPlainClient();
-
-                    int status = get.execute(client);
-
-                    // Content-Length is not available when using chunked transfer encoding, so check for -1 as well
-                    result = !(status == HttpStatus.SC_NO_CONTENT && get.getResponseContentLength() <= 0);
-                    get.releaseConnection();
-                    if (result) {
-                        Log_OC.w(TAG, "isInternetWalled(): Failed to GET " + CONNECTIVITY_CHECK_ROUTE + "," +
-                            " assuming connectivity is impaired");
-                    }
+                // Content-Length is not available when using chunked transfer encoding, so check for -1 as well
+                result = !(status == HttpStatus.SC_NO_CONTENT && get.getResponseContentLength() <= 0);
+                get.releaseConnection();
+                if (result) {
+                    Log_OC.w(TAG, "isInternetWalled(): Failed to GET " + CONNECTIVITY_CHECK_ROUTE + "," +
+                        " assuming connectivity is impaired");
                 }
             } else {
                 result = !c.isConnected();

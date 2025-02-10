@@ -1,22 +1,13 @@
 /*
- * ownCloud Android client application
+ * Nextcloud - Android Client
  *
- * @author David A. Velasco
- * Copyright (C) 2016 ownCloud Inc.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2,
- * as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2022 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2019 Tobias Kaminsky <tobias@kaminsky.me>
+ * SPDX-FileCopyrightText: 2016-2018 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-FileCopyrightText: 2016 ownCloud Inc.
+ * SPDX-FileCopyrightText: 2014 David A. Velasco <dvelasco@solidgear.es>
+ * SPDX-License-Identifier: GPL-2.0-only AND (AGPL-3.0-or-later OR GPL-2.0-only)
  */
-
 package com.owncloud.android.utils;
 
 import android.Manifest;
@@ -28,6 +19,7 @@ import android.os.Environment;
 import android.text.TextUtils;
 import android.webkit.MimeTypeMap;
 
+import com.nextcloud.client.preferences.SubFolderRule;
 import com.owncloud.android.MainApp;
 import com.owncloud.android.R;
 import com.owncloud.android.datamodel.FileDataStorageManager;
@@ -68,6 +60,8 @@ public final class FileStorageUtils {
     private static final String TAG = FileStorageUtils.class.getSimpleName();
 
     private static final String PATTERN_YYYY_MM = "yyyy/MM/";
+    private static final String PATTERN_YYYY = "yyyy/";
+    private static final String PATTERN_YYYY_MM_DD = "yyyy/MM/dd/";
     private static final String DEFAULT_FALLBACK_STORAGE_PATH = "/storage/sdcard0";
 
     private FileStorageUtils() {
@@ -112,6 +106,17 @@ public final class FileStorageUtils {
         // that can be in the accountName since 0.1.190B
     }
 
+    public static String getTemporalEncryptedFolderPath(String accountName) {
+        return MainApp
+            .getAppContext()
+            .getFilesDir()
+            .getAbsolutePath()
+            + File.separator
+            + accountName
+            + File.separator
+            + "temp_encrypted_folder";
+    }
+
     /**
      * Get absolute path to tmp folder inside app folder for given accountName.
      */
@@ -144,14 +149,22 @@ public final class FileStorageUtils {
      * @param date: date in microseconds since 1st January 1970
      * @return string: yyyy/mm/
      */
-    private static String getSubPathFromDate(long date, Locale currentLocale) {
+    private static String getSubPathFromDate(long date, Locale currentLocale, SubFolderRule subFolderRule) {
         if (date == 0) {
             return "";
+        }
+        String datePattern = "";
+        if (subFolderRule == SubFolderRule.YEAR) {
+            datePattern = PATTERN_YYYY;
+        } else if (subFolderRule == SubFolderRule.YEAR_MONTH) {
+            datePattern = PATTERN_YYYY_MM;
+        } else if (subFolderRule == SubFolderRule.YEAR_MONTH_DAY) {
+            datePattern = PATTERN_YYYY_MM_DD;
         }
 
         Date d = new Date(date);
 
-        DateFormat df = new SimpleDateFormat(PATTERN_YYYY_MM, currentLocale);
+        DateFormat df = new SimpleDateFormat(datePattern, currentLocale);
         df.setTimeZone(TimeZone.getTimeZone(TimeZone.getDefault().getID()));
 
         return df.format(d);
@@ -168,17 +181,18 @@ public final class FileStorageUtils {
                                                   String remotePath,
                                                   String syncedFolderLocalPath,
                                                   long dateTaken,
-                                                  Boolean subfolderByDate) {
+                                                  Boolean subfolderByDate,
+                                                  SubFolderRule subFolderRule) {
         String subfolderByDatePath = "";
         if (subfolderByDate) {
-            subfolderByDatePath = getSubPathFromDate(dateTaken, current);
+            subfolderByDatePath = getSubPathFromDate(dateTaken, current, subFolderRule);
         }
 
         File parentFile = new File(file.getAbsolutePath().replace(syncedFolderLocalPath, "")).getParentFile();
 
         String relativeSubfolderPath = "";
         if (parentFile == null) {
-            Log_OC.e("AutoUpload", "Parent folder does not exists!");
+            Log_OC.e("AutoUpload", "Parent folder does not exist!");
         } else {
             relativeSubfolderPath = parentFile.getAbsolutePath();
         }
@@ -245,6 +259,10 @@ public final class FileStorageUtils {
         file.setLockTimeout(remote.getLockTimeout());
         file.setLockToken(remote.getLockToken());
         file.setTags(new ArrayList<>(Arrays.asList(remote.getTags())));
+        file.setImageDimension(remote.getImageDimension());
+        file.setGeoLocation(remote.getGeoLocation());
+        file.setLivePhoto(remote.getLivePhoto());
+        file.setHidden(remote.getHidden());
 
         return file;
     }
@@ -353,17 +371,13 @@ public final class FileStorageUtils {
         }
     }
 
-    @SuppressFBWarnings(value="OBL_UNSATISFIED_OBLIGATION_EXCEPTION_EDGE",
-            justification="False-positive on the output stream")
+    @SuppressFBWarnings(value = "OBL_UNSATISFIED_OBLIGATION_EXCEPTION_EDGE",
+        justification = "False-positive on the output stream")
     public static boolean copyFile(File src, File target) {
         boolean ret = true;
 
-        InputStream in = null;
-        OutputStream out = null;
-
-        try {
-            in = new FileInputStream(src);
-            out = new FileOutputStream(target);
+        try (InputStream in = new FileInputStream(src);
+             OutputStream out = new FileOutputStream(target)) {
             byte[] buf = new byte[1024];
             int len;
             while ((len = in.read(buf)) > 0) {
@@ -371,21 +385,6 @@ public final class FileStorageUtils {
             }
         } catch (IOException ex) {
             ret = false;
-        } finally {
-            if (in != null) {
-                try {
-                    in.close();
-                } catch (IOException e) {
-                    Log_OC.e(TAG, "Error closing input stream during copy", e);
-                }
-            }
-            if (out != null) {
-                try {
-                    out.close();
-                } catch (IOException e) {
-                    Log_OC.e(TAG, "Error closing output stream during copy", e);
-                }
-            }
         }
 
         return ret;
@@ -404,7 +403,13 @@ public final class FileStorageUtils {
             return false;
         }
 
-        for (File f : sourceFolder.listFiles()) {
+        File[] listFiles = sourceFolder.listFiles();
+
+        if (listFiles == null) {
+            return false;
+        }
+
+        for (File f : listFiles) {
             if (f.isDirectory()) {
                 if (!copyDirs(f, new File(targetFolder, f.getName()))) {
                     return false;
@@ -419,7 +424,13 @@ public final class FileStorageUtils {
 
     public static void deleteRecursively(File file, FileDataStorageManager storageManager) {
         if (file.isDirectory()) {
-            for (File child : file.listFiles()) {
+            File[] listFiles = file.listFiles();
+
+            if (listFiles == null) {
+                return;
+            }
+
+            for (File child : listFiles) {
                 deleteRecursively(child, storageManager);
             }
         }
@@ -430,11 +441,19 @@ public final class FileStorageUtils {
 
     public static boolean deleteRecursive(File file) {
         boolean res = true;
+
         if (file.isDirectory()) {
-            for (File c : file.listFiles()) {
+            File[] listFiles = file.listFiles();
+
+            if (listFiles == null) {
+                return true;
+            }
+
+            for (File c : listFiles) {
                 res = deleteRecursive(c) && res;
             }
         }
+
         return file.delete() && res;
     }
 
@@ -660,6 +679,16 @@ public final class FileStorageUtils {
         }
 
         return checkIfEnoughSpace(availableSpaceOnDevice, file);
+    }
+    
+    public static boolean isFolderWritable(File folder) {
+        File[] children = folder.listFiles();
+        
+        if (children != null && children.length > 0) {
+            return children[0].canWrite();
+        } else {
+            return folder.canWrite();
+        }
     }
 
     @VisibleForTesting

@@ -1,21 +1,8 @@
 /*
- * Nextcloud Android client application
+ * Nextcloud - Android Client
  *
- * @author Chris Narkiewicz
- * Copyright (C) 2020 Chris Narkiewicz <hello@ezaquarii.com>
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2020 Chris Narkiewicz <hello@ezaquarii.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
 package com.nextcloud.client.jobs
 
@@ -24,8 +11,6 @@ import android.app.NotificationManager
 import android.content.ContentResolver
 import android.content.Context
 import android.content.res.Resources
-import android.os.Build
-import androidx.annotation.RequiresApi
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
@@ -37,6 +22,9 @@ import com.nextcloud.client.device.PowerManagementService
 import com.nextcloud.client.documentscan.GeneratePDFUseCase
 import com.nextcloud.client.documentscan.GeneratePdfFromImagesWork
 import com.nextcloud.client.integrations.deck.DeckApi
+import com.nextcloud.client.jobs.download.FileDownloadWorker
+import com.nextcloud.client.jobs.offlineOperations.OfflineOperationsWorker
+import com.nextcloud.client.jobs.upload.FileUploadWorker
 import com.nextcloud.client.logger.Logger
 import com.nextcloud.client.network.ConnectivityService
 import com.nextcloud.client.preferences.AppPreferences
@@ -53,7 +41,7 @@ import javax.inject.Provider
  *
  * This class is doing too many things and should be split up into smaller factories.
  */
-@Suppress("LongParameterList") // satisfied by DI
+@Suppress("LongParameterList", "TooManyFunctions") // satisfied by DI
 class BackgroundJobFactory @Inject constructor(
     private val logger: Logger,
     private val preferences: AppPreferences,
@@ -64,7 +52,7 @@ class BackgroundJobFactory @Inject constructor(
     private val deviceInfo: DeviceInfo,
     private val accountManager: UserAccountManager,
     private val resources: Resources,
-    private val dataProvider: ArbitraryDataProvider,
+    private val arbitraryDataProvider: ArbitraryDataProvider,
     private val uploadsStorageManager: UploadsStorageManager,
     private val connectivityService: ConnectivityService,
     private val notificationManager: NotificationManager,
@@ -89,8 +77,7 @@ class BackgroundJobFactory @Inject constructor(
             null
         }
 
-        // ContentObserverWork requires N
-        return if (deviceInfo.apiLevel >= Build.VERSION_CODES.N && workerClass == ContentObserverWork::class) {
+        return if (workerClass == ContentObserverWork::class) {
             createContentObserverJob(context, workerParameters)
         } else {
             when (workerClass) {
@@ -104,17 +91,29 @@ class BackgroundJobFactory @Inject constructor(
                 CalendarBackupWork::class -> createCalendarBackupWork(context, workerParameters)
                 CalendarImportWork::class -> createCalendarImportWork(context, workerParameters)
                 FilesExportWork::class -> createFilesExportWork(context, workerParameters)
-                FilesUploadWorker::class -> createFilesUploadWorker(context, workerParameters)
+                FileUploadWorker::class -> createFilesUploadWorker(context, workerParameters)
+                FileDownloadWorker::class -> createFilesDownloadWorker(context, workerParameters)
                 GeneratePdfFromImagesWork::class -> createPDFGenerateWork(context, workerParameters)
+                HealthStatusWork::class -> createHealthStatusWork(context, workerParameters)
+                TestJob::class -> createTestJob(context, workerParameters)
+                OfflineOperationsWorker::class -> createOfflineOperationsWorker(context, workerParameters)
+                InternalTwoWaySyncWork::class -> createInternalTwoWaySyncWork(context, workerParameters)
                 else -> null // caller falls back to default factory
             }
         }
     }
 
-    private fun createFilesExportWork(
-        context: Context,
-        params: WorkerParameters
-    ): ListenableWorker {
+    private fun createOfflineOperationsWorker(context: Context, params: WorkerParameters): ListenableWorker {
+        return OfflineOperationsWorker(
+            accountManager.user,
+            context,
+            connectivityService,
+            viewThemeUtils.get(),
+            params
+        )
+    }
+
+    private fun createFilesExportWork(context: Context, params: WorkerParameters): ListenableWorker {
         return FilesExportWork(
             context,
             accountManager.user,
@@ -124,22 +123,14 @@ class BackgroundJobFactory @Inject constructor(
         )
     }
 
-    private fun createContentObserverJob(
-        context: Context,
-        workerParameters: WorkerParameters
-    ): ListenableWorker? {
-        @RequiresApi(Build.VERSION_CODES.N)
-        if (deviceInfo.apiLevel >= Build.VERSION_CODES.N) {
-            return ContentObserverWork(
-                context,
-                workerParameters,
-                syncedFolderProvider,
-                powerManagementService,
-                backgroundJobManager.get()
-            )
-        } else {
-            return null
-        }
+    private fun createContentObserverJob(context: Context, workerParameters: WorkerParameters): ListenableWorker {
+        return ContentObserverWork(
+            context,
+            workerParameters,
+            SyncedFolderProvider(contentResolver, preferences, clock),
+            powerManagementService,
+            backgroundJobManager.get()
+        )
     }
 
     private fun createContactsBackupWork(context: Context, params: WorkerParameters): ContactsBackupWork {
@@ -147,7 +138,7 @@ class BackgroundJobFactory @Inject constructor(
             context,
             params,
             resources,
-            dataProvider,
+            arbitraryDataProvider,
             contentResolver,
             accountManager
         )
@@ -190,7 +181,8 @@ class BackgroundJobFactory @Inject constructor(
             uploadsStorageManager = uploadsStorageManager,
             connectivityService = connectivityService,
             powerManagementService = powerManagementService,
-            syncedFolderProvider = syncedFolderProvider
+            syncedFolderProvider = syncedFolderProvider,
+            backgroundJobManager = backgroundJobManager.get()
         )
     }
 
@@ -244,13 +236,25 @@ class BackgroundJobFactory @Inject constructor(
         )
     }
 
-    private fun createFilesUploadWorker(context: Context, params: WorkerParameters): FilesUploadWorker {
-        return FilesUploadWorker(
+    private fun createFilesUploadWorker(context: Context, params: WorkerParameters): FileUploadWorker {
+        return FileUploadWorker(
             uploadsStorageManager,
             connectivityService,
             powerManagementService,
             accountManager,
             viewThemeUtils.get(),
+            localBroadcastManager.get(),
+            backgroundJobManager.get(),
+            preferences,
+            context,
+            params
+        )
+    }
+
+    private fun createFilesDownloadWorker(context: Context, params: WorkerParameters): FileDownloadWorker {
+        return FileDownloadWorker(
+            viewThemeUtils.get(),
+            accountManager,
             localBroadcastManager.get(),
             context,
             params
@@ -266,6 +270,35 @@ class BackgroundJobFactory @Inject constructor(
             userAccountManager = accountManager,
             logger = logger,
             params = params
+        )
+    }
+
+    private fun createHealthStatusWork(context: Context, params: WorkerParameters): HealthStatusWork {
+        return HealthStatusWork(
+            context,
+            params,
+            accountManager,
+            arbitraryDataProvider,
+            backgroundJobManager.get()
+        )
+    }
+
+    private fun createTestJob(context: Context, params: WorkerParameters): TestJob {
+        return TestJob(
+            context,
+            params,
+            backgroundJobManager.get()
+        )
+    }
+
+    private fun createInternalTwoWaySyncWork(context: Context, params: WorkerParameters): InternalTwoWaySyncWork {
+        return InternalTwoWaySyncWork(
+            context,
+            params,
+            accountManager,
+            powerManagementService,
+            connectivityService,
+            preferences
         )
     }
 }

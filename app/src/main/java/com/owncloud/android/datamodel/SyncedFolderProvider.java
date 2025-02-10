@@ -1,26 +1,12 @@
 /*
- * Nextcloud Android client application
+ * Nextcloud - Android Client
  *
- * @author Andy Scherzinger
- * Copyright (C) 2016 Andy Scherzinger
- * Copyright (C) 2016 Nextcloud.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU AFFERO GENERAL PUBLIC LICENSE
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU AFFERO GENERAL PUBLIC LICENSE for more details.
- *
- * You should have received a copy of the GNU Affero General Public
- * License along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * SPDX-FileCopyrightText: 2016 Andy Scherzinger
+ * SPDX-FileCopyrightText: 2016 Nextcloud
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
 package com.owncloud.android.datamodel;
 
-import android.accounts.Account;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
@@ -31,13 +17,17 @@ import com.nextcloud.client.account.User;
 import com.nextcloud.client.core.Clock;
 import com.nextcloud.client.preferences.AppPreferences;
 import com.nextcloud.client.preferences.AppPreferencesImpl;
+import com.nextcloud.client.preferences.SubFolderRule;
 import com.owncloud.android.db.ProviderMeta;
 import com.owncloud.android.lib.common.utils.Log_OC;
+import com.owncloud.android.lib.resources.files.model.ServerFileInterface;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Observable;
+
+import javax.annotation.Nullable;
 
 import androidx.annotation.NonNull;
 
@@ -86,6 +76,10 @@ public class SyncedFolderProvider extends Observable {
             Log_OC.e(TAG, "Failed to insert item " + syncedFolder.getLocalPath() + " into folder sync db.");
             return -1;
         }
+    }
+
+    public static boolean isAutoUploadFolder(SyncedFolderProvider syncedFolderProvider, ServerFileInterface file, User user) {
+        return syncedFolderProvider != null && syncedFolderProvider.findByRemotePathAndAccount(file.getRemotePath(), user);
     }
 
     public int countEnabledSyncedFolders() {
@@ -218,6 +212,29 @@ public class SyncedFolderProvider extends Observable {
 
     }
 
+    @Nullable
+    public SyncedFolder getSyncedFolderByID(Long syncedFolderID) {
+        SyncedFolder result = null;
+        Cursor cursor = mContentResolver.query(
+            ProviderMeta.ProviderTableMeta.CONTENT_URI_SYNCED_FOLDERS,
+            null,
+            ProviderMeta.ProviderTableMeta._ID + " =? ",
+            new String[]{syncedFolderID.toString()},
+            null
+                                              );
+
+        if (cursor != null && cursor.getCount() == 1 && cursor.moveToFirst()) {
+            result = createSyncedFolderFromCursor(cursor);
+        }
+
+        if (cursor != null) {
+            cursor.close();
+        }
+
+        return result;
+
+    }
+
     /**
      *  Delete all synced folders for an account
      *
@@ -306,6 +323,10 @@ public class SyncedFolderProvider extends Observable {
         );
     }
 
+    public AppPreferences getPreferences() {
+        return preferences;
+    }
+
     /**
      * update given synced folder.
      *
@@ -361,6 +382,13 @@ public class SyncedFolderProvider extends Observable {
                     ProviderMeta.ProviderTableMeta.SYNCED_FOLDER_TYPE)));
             boolean hidden = cursor.getInt(cursor.getColumnIndexOrThrow(
                 ProviderMeta.ProviderTableMeta.SYNCED_FOLDER_HIDDEN)) == 1;
+            SubFolderRule subFolderRule = SubFolderRule.values()[cursor.getInt(
+                    cursor.getColumnIndexOrThrow(ProviderMeta.ProviderTableMeta.SYNCED_FOLDER_SUBFOLDER_RULE))];
+            boolean excludeHidden = cursor.getInt(cursor.getColumnIndexOrThrow(
+                ProviderMeta.ProviderTableMeta.SYNCED_FOLDER_EXCLUDE_HIDDEN)) == 1;
+            long lastScanTimestampMs = cursor.getLong(cursor.getColumnIndexOrThrow(
+                ProviderMeta.ProviderTableMeta.SYNCED_FOLDER_LAST_SCAN_TIMESTAMP_MS));
+
 
             syncedFolder = new SyncedFolder(id,
                                             localPath,
@@ -375,7 +403,10 @@ public class SyncedFolderProvider extends Observable {
                                             enabled,
                                             enabledTimestampMs,
                                             type,
-                                            hidden);
+                                            hidden,
+                                            subFolderRule,
+                                            excludeHidden,
+                                            lastScanTimestampMs);
         }
         return syncedFolder;
     }
@@ -401,9 +432,11 @@ public class SyncedFolderProvider extends Observable {
         cv.put(ProviderMeta.ProviderTableMeta.SYNCED_FOLDER_UPLOAD_ACTION, syncedFolder.getUploadAction());
         cv.put(ProviderMeta.ProviderTableMeta.SYNCED_FOLDER_NAME_COLLISION_POLICY,
                syncedFolder.getNameCollisionPolicyInt());
-        cv.put(ProviderMeta.ProviderTableMeta.SYNCED_FOLDER_TYPE, syncedFolder.getType().getId());
+        cv.put(ProviderMeta.ProviderTableMeta.SYNCED_FOLDER_TYPE, syncedFolder.getType().id);
         cv.put(ProviderMeta.ProviderTableMeta.SYNCED_FOLDER_HIDDEN, syncedFolder.isHidden());
-
+        cv.put(ProviderMeta.ProviderTableMeta.SYNCED_FOLDER_SUBFOLDER_RULE, syncedFolder.getSubfolderRule().ordinal());
+        cv.put(ProviderMeta.ProviderTableMeta.SYNCED_FOLDER_EXCLUDE_HIDDEN, syncedFolder.isExcludeHidden());
+        cv.put(ProviderMeta.ProviderTableMeta.SYNCED_FOLDER_LAST_SCAN_TIMESTAMP_MS, syncedFolder.getLastScanTimestampMs());
         return cv;
     }
 

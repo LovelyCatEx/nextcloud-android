@@ -1,25 +1,10 @@
 /*
- * Nextcloud Android client application
+ * Nextcloud - Android Client
  *
- *  @author Álvaro Brey
- *  Copyright (C) 2022 Álvaro Brey
- *  Copyright (C) 2022 Nextcloud GmbH
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU AFFERO GENERAL PUBLIC LICENSE
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU AFFERO GENERAL PUBLIC LICENSE for more details.
- *
- * You should have received a copy of the GNU Affero General Public
- * License along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
+ * SPDX-FileCopyrightText: 2022 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2022 Nextcloud GmbH
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
  */
-
 package com.nextcloud.client.database.entity
 
 import androidx.room.ColumnInfo
@@ -32,6 +17,8 @@ data class CapabilityEntity(
     @PrimaryKey(autoGenerate = true)
     @ColumnInfo(name = ProviderTableMeta._ID)
     val id: Int?,
+    @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_ASSISTANT)
+    val assistant: Int?,
     @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_ACCOUNT_NAME)
     val accountName: String?,
     @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_VERSION_MAYOR)
@@ -98,6 +85,8 @@ data class CapabilityEntity(
     val endToEndEncryption: Int?,
     @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_END_TO_END_ENCRYPTION_KEYS_EXIST)
     val endToEndEncryptionKeysExist: Int?,
+    @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_END_TO_END_ENCRYPTION_API_VERSION)
+    val endToEndEncryptionApiVersion: String?,
     @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_ACTIVITY)
     val activity: Int?,
     @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_SERVER_BACKGROUND_DEFAULT)
@@ -129,5 +118,23 @@ data class CapabilityEntity(
     @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_FILES_LOCKING_VERSION)
     val filesLockingVersion: String?,
     @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_GROUPFOLDERS)
-    val groupfolders: Int?
+    val groupfolders: Int?,
+    @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_DROP_ACCOUNT)
+    val dropAccount: Int?,
+    @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_SECURITY_GUARD)
+    val securityGuard: Int?,
+    @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_FORBIDDEN_FILENAME_CHARACTERS)
+    val forbiddenFileNameCharacters: Int?,
+    @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_FORBIDDEN_FILENAMES)
+    val forbiddenFileNames: Int?,
+    @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_FORBIDDEN_FORBIDDEN_FILENAME_EXTENSIONS)
+    val forbiddenFileNameExtensions: Int?,
+    @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_FORBIDDEN_FORBIDDEN_FILENAME_BASE_NAMES)
+    val forbiddenFilenameBaseNames: Int?,
+    @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_FILES_DOWNLOAD_LIMIT)
+    val filesDownloadLimit: Int?,
+    @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_FILES_DOWNLOAD_LIMIT_DEFAULT)
+    val filesDownloadLimitDefault: Int?,
+    @ColumnInfo(name = ProviderTableMeta.CAPABILITIES_RECOMMENDATION)
+    val recommendation: Int?
 )

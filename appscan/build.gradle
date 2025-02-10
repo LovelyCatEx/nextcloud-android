@@ -1,3 +1,12 @@
+/*
+ * Nextcloud - Android Client
+ *
+ * SPDX-FileCopyrightText: 2016-2024 Nextcloud GmbH and Nextcloud contributors
+ * SPDX-FileCopyrightText: 2024 Alper Ozturk <alper.ozturk@nextcloud.com>
+ * SPDX-FileCopyrightText: 2023 Álvaro Brey <alvaro@alvarobrey.com>
+ * SPDX-FileCopyrightText: 2023 Andy Scherzinger <info@andy-scherzinger.de>
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
+ */
 buildscript {
     dependencies {
         classpath "com.android.tools.build:gradle:$androidPluginVersion"
@@ -10,11 +19,11 @@ apply plugin: 'kotlin-android'
 
 android {
     namespace 'com.nextcloud.appscan'
-    compileSdk 33
 
     defaultConfig {
-        minSdk 21
-        targetSdk 33
+        minSdk 25
+        targetSdk 35
+        compileSdk 35
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }

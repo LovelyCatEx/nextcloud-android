@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
 
+#
+# SPDX-FileCopyrightText: 2019-2024 Nextcloud GmbH and Nextcloud contributors
+# SPDX-FileCopyrightText: 2019-2022 Tobias Kaminsky <tobias@kaminsky.me>
+# SPDX-License-Identifier: AGPL-3.0-or-later OR GPL-2.0-only
+#
+
 #1: LOG_USERNAME
 #2: LOG_PASSWORD
 #3: DRONE_BUILD_NUMBER
 #4: DRONE_PULL_REQUEST
 
-DAV_URL=https://nextcloud.kaminsky.me/remote.php/webdav/android-artifacts/
+
 PUBLIC_URL=https://www.kaminsky.me/nc-dev/android-artifacts
 USER=$1
 PASS=$2
 BUILD=$3
 PR=$4
+GITHUB_TOKEN=$5
+DAV_URL=https://nextcloud.kaminsky.me/remote.php/dav/files/$USER/android-artifacts/
 
 source scripts/lib.sh
 
